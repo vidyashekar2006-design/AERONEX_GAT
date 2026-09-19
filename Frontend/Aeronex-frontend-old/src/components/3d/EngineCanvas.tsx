@@ -1,0 +1,6 @@
+import { Canvas } from '@react-three/fiber'
+import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
+import { useRef } from 'react'
+import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
+import { AeroPistonEngineModel, type ComponentName } from './AeroPistonEngineModel'
+export function EngineCanvas({autoRotate,onSelect,resetSignal}:{autoRotate:boolean;onSelect:(n:ComponentName)=>void;resetSignal:number}) { const controls=useRef<OrbitControlsImpl>(null); return <div className="engine-canvas"><Canvas onCreated={({scene})=>{scene.background=null}}><PerspectiveCamera makeDefault position={[5,3.3,6]}/><ambientLight intensity={1.6}/><directionalLight position={[4,6,5]} intensity={2.2} color="#c5eaff"/><pointLight position={[-4,1,2]} intensity={15} color="#1e9aa5"/><AeroPistonEngineModel onSelect={onSelect}/><gridHelper args={[12,12,'#285468','#132a36']} position={[0,-1.5,0]}/><OrbitControls key={resetSignal} ref={controls} enablePan={false} autoRotate={autoRotate} autoRotateSpeed={1.1} minDistance={4} maxDistance={10}/></Canvas><div className="hud top">3D TWIN <span>SYS-ID: ENG-01</span></div><div className="hud bottom">KINEMATICS: REPRESENTATIVE <span>SENSOR STATUS: 10 / 10</span></div></div> }

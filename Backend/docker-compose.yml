@@ -1,0 +1,31 @@
+services:
+  backend:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg://aeronex:aeronex@postgres:5432/aeronex
+      HOST: 0.0.0.0
+      PORT: 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: aeronex
+      POSTGRES_USER: aeronex
+      POSTGRES_PASSWORD: aeronex
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aeronex -d aeronex"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - aeronex_postgres:/var/lib/postgresql/data
+
+volumes:
+  aeronex_postgres:

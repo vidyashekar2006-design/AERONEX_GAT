@@ -1,0 +1,4 @@
+import type { Telemetry } from '../../simulation/types'
+import { value } from '../../utils/formatting'
+const metrics:[keyof Telemetry,string,string,number?][]=[['rpm','RPM','RPM'],['cht','CHT','°C'],['egt','EGT','°C'],['oilTemperature','OIL TEMPERATURE','°C'],['oilPressure','OIL PRESSURE','bar',1],['fuelFlow','FUEL FLOW','L/h',1],['vibration','VIBRATION','g',2],['throttle','THROTTLE','%'],['altitude','ALTITUDE','m'],['ambientTemperature','AMBIENT TEMP','°C']]
+export function TelemetryGrid({telemetry,compact=false}:{telemetry:Telemetry;compact?:boolean}) { return <div className={'telemetry-grid '+(compact?'compact':'')}>{metrics.map(([key,label,unit,digits])=><article className="metric-card" key={key}><span>{label}</span><strong>{value(telemetry[key] as number,unit,digits ?? 0)}</strong><em>{key==='egt'?'STABLE':key==='vibration'?'BASELINE':'NORMAL'}</em></article>)}</div> }

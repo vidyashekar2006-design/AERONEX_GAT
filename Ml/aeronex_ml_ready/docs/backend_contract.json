@@ -1,0 +1,8 @@
+{
+  "request": {"telemetry_window": "array<object>", "required_duration_hours": "number|null"},
+  "required_fields": ["timestamp", "engine_id", "mission_phase"],
+  "optional_engine_signals": ["load_fraction", "ambient_temperature_c", "rpm", "oil_temperature_c", "coolant_temperature_c", "oil_pressure_bar", "manifold_pressure_bar", "fuel_flow_kg_h", "vibration_rms", "exhaust_temperature_c"],
+  "response": "PredictionResult",
+  "failure_statuses": ["INSUFFICIENT_DATA", "MODEL_UNAVAILABLE", "OUT_OF_DISTRIBUTION", "LOW_CONFIDENCE"],
+  "note": "No model training occurs during inference."
+}

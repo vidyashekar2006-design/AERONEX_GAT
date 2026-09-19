@@ -1,0 +1,7 @@
+{
+  "threshold_warning": 0.029640514767518944,
+  "test_precision": 0.6834319526627219,
+  "test_recall": 0.183187946074544,
+  "test_false_positive_rate": 0.033034887310898424,
+  "note": "Post-hoc evaluation only; model fit used normal training rows and threshold used training-normal score quantile."
+}

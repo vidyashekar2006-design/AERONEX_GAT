@@ -1,0 +1,6 @@
+{
+  "name": "AERONEX",
+  "description": "Digital Twin & Engine Health Monitoring Platform for aero piston engines - Team AETHERIS (SIH 2026)",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

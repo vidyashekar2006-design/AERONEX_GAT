@@ -1,0 +1,2 @@
+const rows=['Anomaly Detection','Fault Prediction','Degradation Estimation','Remaining Useful Life','Predictive Maintenance','Mission Completion Prediction']
+export function AnalysisPanel(){return <section className="panel analysis"><div className="section-head"><div><p>AI & ANALYSIS</p><h3>MODEL INTEGRATION</h3></div><span className="source-tag">MODEL PENDING</span></div><div className="analysis-grid">{rows.map(row=><div key={row}><span>{row}</span><b>NOT AVAILABLE</b><small>Awaiting validated model output</small></div>)}</div></section>}

@@ -1,0 +1,4 @@
+import { Activity, BarChart3, ClipboardList, Cpu, Gauge, Menu, Settings, ShieldAlert, Target } from 'lucide-react'
+const items=[['Dashboard',Gauge],['Live Telemetry',Activity],['Digital Twin',Cpu],['Health & Alerts',ShieldAlert],['Analysis',BarChart3],['Mission',Target],['Reports',ClipboardList],['Settings',Settings]] as const
+export type Page = typeof items[number][0]
+export function Sidebar({active,onChange}:{active:Page;onChange:(page:Page)=>void}) { return <aside className="sidebar"><div className="nav-title"><Menu size={15}/><span>WORKSTATION</span></div><nav>{items.map(([label,Icon])=><button key={label} className={active===label?'active':''} onClick={()=>onChange(label)}><Icon size={18}/><span>{label}</span></button>)}</nav><div className="representative">REPRESENTATIVE<br/>ACADEMIC MODEL</div></aside> }

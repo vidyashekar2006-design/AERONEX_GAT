@@ -1,0 +1,2 @@
+import type { Alert } from '../../simulation/types'
+export function AlertPanel({alerts}:{alerts:Alert[]}) { return <section className="panel alerts"><div className="section-head"><div><p>RECENT ALERTS</p><h3>EVENT STREAM</h3></div><span className="source-tag">DEMO</span></div><div className="alert-list">{alerts.slice(0,5).map(a=><div className="alert" key={a.id}><i className={a.level.toLowerCase()}/><div><b>{a.message}</b>{a.detail&&<small>{a.detail}</small>}</div><time>{a.time}</time></div>)}</div></section> }

@@ -1,0 +1,2 @@
+import type { MissionPhase } from '../../simulation/types'
+export function MissionTimeline({phases}:{phases:MissionPhase[]}) { return <section className="panel timeline"><div className="section-head"><div><p>MISSION TIMELINE</p><h3>REPRESENTATIVE MISSION</h3></div><span className="source-tag">DEMO PROVIDER</span></div><ol>{phases.map(p=><li key={p.id} className={p.state.toLowerCase()}><span>{p.id}</span><div><b>{p.name}</b><small>{p.state} {p.duration !== '—' && `• ${p.duration}`}</small></div></li>)}</ol></section> }

@@ -1,0 +1,3 @@
+import type { Status } from '../../simulation/types'
+import { statusClass } from '../../utils/formatting'
+export function HealthPanel({health}:{health:Status}) { return <section className="panel health-panel"><div className="section-head"><div><p>ENGINE HEALTH</p><h3>SYSTEM HEALTH</h3></div><span className={'status-pill '+statusClass(health)}>{health}</span></div><dl><div><dt>Health State</dt><dd className={statusClass(health)}>{health}</dd></div><div><dt>Degradation</dt><dd>NONE</dd></div><div><dt>Anomaly</dt><dd>NONE</dd></div><div><dt>Fault</dt><dd>NONE</dd></div></dl><div className="unavailable"><span>HEALTH SCORE</span><strong>NOT AVAILABLE</strong><small>Status-only display until a validated score is provided.</small></div></section> }

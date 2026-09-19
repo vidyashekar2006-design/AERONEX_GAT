@@ -1,0 +1,68 @@
+{
+  "timestamp": "2026-01-01 04:09:50",
+  "data_quality": {
+    "status": "GOOD",
+    "rows": 120,
+    "missing_ratio": 0.0,
+    "timestamp_valid": true,
+    "duplicates": 0,
+    "invalid_numeric": 0,
+    "range_violations": {},
+    "constant_sensors": [],
+    "sampling_interval_seconds": 10.0,
+    "sensor_anomalies": []
+  },
+  "engine_health": {
+    "score": 90.18601098484848,
+    "status": "HEALTHY",
+    "confidence": null
+  },
+  "anomaly": {
+    "detected": false,
+    "score": -0.005274034444342712,
+    "severity": "LOW",
+    "confidence": null
+  },
+  "fault": {
+    "predicted": "bearing_degradation",
+    "probability": 0.7666666666666667,
+    "confidence": 0.7666666666666667
+  },
+  "degradation": {
+    "score": 0.09874889015151515,
+    "rate": 8.647058823529411e-05,
+    "trend": "INCREASING",
+    "confidence": null
+  },
+  "rul": {
+    "value": 194.93340554653682,
+    "unit": "hours",
+    "confidence": null,
+    "status": "ESTIMATED_FROM_TRAINED_REGRESSOR"
+  },
+  "maintenance": {
+    "action": "CONTINUE",
+    "priority": "LOW",
+    "reason": "Degradation index is increasing over the supplied window; Fault classifier most strongly indicates bearing_degradation (77%)"
+  },
+  "mission": {
+    "reliability": 0.8879526235585157,
+    "completion_probability": 0.8879526235585157,
+    "risk": "LOW",
+    "decision": "MISSION_SUPPORTED",
+    "confidence": 0.8879526235585157
+  },
+  "explanations": [
+    "Degradation index is increasing over the supplied window",
+    "Fault classifier most strongly indicates bearing_degradation (77%)"
+  ],
+  "model_metadata": {
+    "health": "health",
+    "degradation": "degradation",
+    "rul": "rul",
+    "mission": "mission",
+    "fault": "fault",
+    "anomaly": "anomaly"
+  },
+  "inference_latency_ms": 129.36828900001274
+}

@@ -1,0 +1,68 @@
+{
+  "timestamp": "2026-01-01 04:09:50",
+  "data_quality": {
+    "status": "GOOD",
+    "rows": 120,
+    "missing_ratio": 0.0,
+    "timestamp_valid": true,
+    "duplicates": 0,
+    "invalid_numeric": 0,
+    "range_violations": {},
+    "constant_sensors": [],
+    "sampling_interval_seconds": 10.0,
+    "sensor_anomalies": []
+  },
+  "engine_health": {
+    "score": 90.2782097943723,
+    "status": "HEALTHY",
+    "confidence": null
+  },
+  "anomaly": {
+    "detected": true,
+    "score": 0.03523694034156877,
+    "severity": "MEDIUM",
+    "confidence": null
+  },
+  "fault": {
+    "predicted": null,
+    "probability": 0.5333333333333333,
+    "confidence": 0.5333333333333333
+  },
+  "degradation": {
+    "score": 0.09754734848484847,
+    "rate": 8.647058823529411e-05,
+    "trend": "INCREASING",
+    "confidence": null
+  },
+  "rul": {
+    "value": 194.7286405663781,
+    "unit": "hours",
+    "confidence": null,
+    "status": "ESTIMATED_FROM_TRAINED_REGRESSOR"
+  },
+  "maintenance": {
+    "action": "INSPECT",
+    "priority": "MEDIUM",
+    "reason": "Unsupervised anomaly score is 0.04 (medium severity); Degradation index is increasing over the supplied window"
+  },
+  "mission": {
+    "reliability": 0.6530924134708949,
+    "completion_probability": 0.6530924134708949,
+    "risk": "MEDIUM",
+    "decision": "MISSION_AT_RISK",
+    "confidence": 0.6530924134708949
+  },
+  "explanations": [
+    "Unsupervised anomaly score is 0.04 (medium severity)",
+    "Degradation index is increasing over the supplied window"
+  ],
+  "model_metadata": {
+    "health": "health",
+    "degradation": "degradation",
+    "rul": "rul",
+    "mission": "mission",
+    "fault": "fault",
+    "anomaly": "anomaly"
+  },
+  "inference_latency_ms": 135.3083860000197
+}
