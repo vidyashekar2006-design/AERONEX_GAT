@@ -1,409 +1,740 @@
-✈️ AERONEX — AI-Enabled Digital Twin for Aero Piston Engines
+✈️ AERONEX
 
-«Smart India Hackathon 2026 | Team AETHERIS_GAT | Team ID: 149433»
+AI-Enabled Real-Time Digital Twin for Aero Piston Engines
 
-AERONEX is an AI-enabled real-time Digital Twin system designed for health monitoring, fault prediction, Remaining Useful Life (RUL) estimation, and mission reliability enhancement of aero piston engines used in MALE UAVs.
+Smart India Hackathon 2026 | Team AETHERIS_GAT | Team ID: 149433
 
-The system combines real-time telemetry, Digital Twin technology, Machine Learning, anomaly detection, prognostics, and mission simulation into a unified decision-support platform.
+AERONEX is an AI-enabled real-time Digital Twin platform for health monitoring, fault prediction, degradation analysis, Remaining Useful Life (RUL) estimation, and mission reliability enhancement of aero piston engines used in MALE UAVs.
+
+The platform connects engine telemetry → Digital Twin → AI/ML analysis → prognostics → mission simulation → decision support through a unified web-based system.
 
 ---
 
-🚀 Problem Statement
+🎯 Problem
 
-Aero piston engines used in UAVs operate under continuously changing conditions such as:
+Aero piston engines generate multiple telemetry parameters during operation, including:
 
 - RPM
-- Manifold/ambient pressure
-- Oil pressure and temperature
-- Cylinder Head Temperature (CHT)
-- Exhaust Gas Temperature (EGT)
+- Manifold pressure
+- Oil pressure
+- Oil temperature
+- CHT
+- EGT
 - Fuel flow
 - Vibration
-- Throttle
 - Engine load
+- Throttle
 - Altitude
+- Ambient temperature and pressure
 
-Traditional monitoring systems primarily show current sensor values. They may not provide sufficient early warning of degradation or impending faults.
+Monitoring these parameters individually does not provide a complete picture of engine health, degradation, or future failure risk.
 
-AERONEX addresses this by transforming raw telemetry into health insights, fault predictions, degradation trends, RUL estimates, and mission-level decisions.
+AERONEX transforms telemetry into predictive intelligence so that operators can understand:
 
----
-
-💡 Our Solution
-
-AERONEX follows an end-to-end pipeline:
-
-Telemetry
-    ↓
-Data Validation & Preprocessing
-    ↓
-Digital Twin
-    ↓
-ML-Based Health Analysis
-    ↓
-Anomaly / Fault Detection
-    ↓
-Degradation & Prognostics
-    ↓
-RUL Estimation
-    ↓
-Mission Simulation
-    ↓
-Decision Support
-    ↓
-Interactive Dashboard
-
-The goal is to move from:
-
-"What is happening to the engine?"
-
-to
-
-"What is likely to happen next, and what should we consider doing?"
+«What is happening now → What is going wrong → How the engine is degrading → What may happen next → How the mission could be affected»
 
 ---
 
-⭐ Key Features
+💡 AERONEX Solution
 
-📡 Real-Time Telemetry Monitoring
+AERONEX combines multiple layers into one predictive maintenance ecosystem.
 
-Monitors important engine and environmental parameters and provides a centralized view of engine health.
-
-🪞 Digital Twin
-
-Creates a software representation of the physical engine that continuously reflects its operational state using telemetry data.
-
-🤖 Machine Learning-Based Analysis
-
-Machine learning models analyze telemetry patterns to identify abnormal engine behavior and support fault prediction.
-
-🚨 Anomaly & Fault Detection
-
-Detects deviations from expected operating behavior and identifies potential fault conditions.
-
-Supported fault categories include:
-
-- Lubrication faults
-- Cooling faults
-- Bearing-related faults
-- Overheating
-- Performance degradation
-- Sensor-related faults
-
-📉 Degradation Monitoring
-
-Tracks changes in engine health over time instead of relying only on instantaneous sensor values.
-
-⏳ Remaining Useful Life (RUL)
-
-Estimates the remaining operational life of the engine based on its degradation behavior.
-
-🛫 Mission Simulation
-
-Evaluates engine behavior under different mission conditions and helps analyze potential operational scenarios.
-
-🧠 Decision Support
-
-Combines health, fault, degradation, and mission information to provide actionable engineering insights.
-
-📊 Interactive Dashboard
-
-Provides visualizations for:
-
-- Live telemetry
-- Engine health
-- Fault status
-- Anomalies
-- Degradation
-- RUL
-- Mission analysis
-- Alerts
-
----
-
-🧠 Machine Learning Pipeline
-
-AERONEX uses machine learning as part of the predictive maintenance pipeline.
-
-Engine Telemetry
-      ↓
-Data Cleaning
-      ↓
-Feature Preparation
-      ↓
-Pattern Analysis
-      ↓
-Anomaly / Fault Detection
-      ↓
-Health Assessment
-      ↓
-Degradation Analysis
-      ↓
-RUL Estimation
-
-The ML layer is designed to help identify patterns that may not be obvious from individual sensor readings.
+                 ┌─────────────────────────┐
+                 │   ENGINE / SIMULATOR     │
+                 │     TELEMETRY SOURCE     │
+                 └────────────┬────────────┘
+                              │
+                              ▼
+                 ┌─────────────────────────┐
+                 │    DATA INGESTION       │
+                 │  Validation & Processing │
+                 └────────────┬────────────┘
+                              │
+                              ▼
+                 ┌─────────────────────────┐
+                 │       FASTAPI           │
+                 │      BACKEND            │
+                 └────────────┬────────────┘
+                              │
+                 ┌────────────┴────────────┐
+                 │                         │
+                 ▼                         ▼
+       ┌─────────────────┐       ┌─────────────────┐
+       │    DATABASE     │       │  DIGITAL TWIN   │
+       │ Supabase / SQL  │       │ Engine State    │
+       └────────┬────────┘       └────────┬────────┘
+                │                         │
+                └────────────┬────────────┘
+                             ▼
+                  ┌──────────────────────┐
+                  │      AI / ML         │
+                  │ Health & Fault       │
+                  │ Analysis             │
+                  └──────────┬───────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              ▼              ▼              ▼
+       ┌────────────┐ ┌────────────┐ ┌─────────────┐
+       │ Anomaly /  │ │Degradation │ │     RUL     │
+       │ Fault      │ │ Analysis   │ │ Estimation  │
+       │ Detection  │ │            │ │             │
+       └─────┬──────┘ └─────┬──────┘ └──────┬──────┘
+             │              │               │
+             └──────────────┼───────────────┘
+                            ▼
+                 ┌────────────────────────┐
+                 │   MISSION SIMULATION   │
+                 │  Scenario & Reliability│
+                 │       Analysis         │
+                 └────────────┬───────────┘
+                              │
+                              ▼
+                 ┌────────────────────────┐
+                 │    DECISION SUPPORT    │
+                 │ Alerts • Insights •    │
+                 │ Maintenance Guidance   │
+                 └────────────┬───────────┘
+                              │
+                              ▼
+                 ┌────────────────────────┐
+                 │    REACT DASHBOARD     │
+                 │ Real-Time Visualization│
+                 └────────────────────────┘
 
 ---
 
 🏗️ System Architecture
 
-             ┌─────────────────────┐
-             │   Engine Telemetry  │
-             └──────────┬──────────┘
-                        ↓
-             ┌─────────────────────┐
-             │ Data Processing &   │
-             │ Validation          │
-             └──────────┬──────────┘
-                        ↓
-             ┌─────────────────────┐
-             │    Digital Twin     │
-             └──────────┬──────────┘
-                        ↓
-          ┌─────────────┴─────────────┐
-          ↓                           ↓
- ┌─────────────────┐        ┌─────────────────┐
- │ ML / Anomaly    │        │ Engine Health   │
- │ Detection       │        │ Analysis        │
- └────────┬────────┘        └────────┬────────┘
-          ↓                           ↓
- ┌─────────────────┐        ┌─────────────────┐
- │ Prognostics &   │        │ Mission         │
- │ RUL Estimation  │        │ Simulation      │
- └────────┬────────┘        └────────┬────────┘
-          └─────────────┬─────────────┘
-                        ↓
-             ┌─────────────────────┐
-             │ Decision Support    │
-             └──────────┬──────────┘
-                        ↓
-             ┌─────────────────────┐
-             │ Web Dashboard       │
-             └─────────────────────┘
+AERONEX is organized into five major layers.
+
+1️⃣ Data Layer
+
+The system receives engine telemetry containing physical and environmental parameters.
+
+Engine / Simulator
+       ↓
+Telemetry
+       ↓
+Structured Data Contract
+
+The standardized telemetry structure allows every module to work with the same data format.
+
+---
+
+2️⃣ Backend & Data Processing Layer
+
+The FastAPI backend acts as the central communication layer.
+
+Frontend
+   ↕
+FastAPI
+   ↕
+ML / Digital Twin / Simulation
+   ↕
+Database
+
+The backend is responsible for:
+
+- Receiving telemetry
+- Validating incoming data
+- Routing requests
+- Communicating with ML modules
+- Accessing stored engine data
+- Serving analysis results
+- Providing alerts and health information
+- Supporting real-time communication
+
+---
+
+3️⃣ Digital Twin Layer
+
+The Digital Twin maintains a virtual representation of the engine's current operational state.
+
+Telemetry
+    ↓
+Engine Parameters
+    ↓
+Virtual Engine State
+    ↓
+Health / Degradation Representation
+
+As new telemetry arrives, the Digital Twin can be updated to represent the corresponding engine condition.
+
+This creates a bridge between:
+
+Physical Engine ↔ Digital Representation
+
+---
+
+4️⃣ AI / ML Layer
+
+The intelligence layer analyzes telemetry and engine-state information.
+
+                Telemetry
+                    ↓
+            Data Preprocessing
+                    ↓
+             Feature Analysis
+                    ↓
+        ┌───────────┴───────────┐
+        ↓                       ↓
+   Fault / Anomaly         Health Analysis
+     Detection                  ↓
+        │                 Degradation
+        │                    Analysis
+        └───────────┬───────────┘
+                    ↓
+              Prognostics
+                    ↓
+             RUL Estimation
+
+The ML layer is intended to identify patterns that may not be obvious from individual sensor readings.
+
+---
+
+5️⃣ Mission & Decision Layer
+
+Engine health is not considered in isolation.
+
+AERONEX connects engine condition with mission scenarios.
+
+Engine Health
+     +
+Degradation
+     +
+RUL
+     +
+Mission Conditions
+     ↓
+Mission Simulation
+     ↓
+Reliability Analysis
+     ↓
+Decision Support
+
+This allows the system to move beyond component-level monitoring toward mission-aware engine reliability analysis.
+
+---
+
+🔄 End-to-End Data Flow
+
+The complete AERONEX pipeline can be summarized as:
+
+1. TELEMETRY GENERATION
+        ↓
+2. DATA INGESTION
+        ↓
+3. VALIDATION & PREPROCESSING
+        ↓
+4. DATABASE STORAGE
+        ↓
+5. DIGITAL TWIN UPDATE
+        ↓
+6. AI / ML ANALYSIS
+        ↓
+7. ANOMALY & FAULT DETECTION
+        ↓
+8. DEGRADATION ANALYSIS
+        ↓
+9. RUL / PROGNOSTICS
+        ↓
+10. MISSION SIMULATION
+        ↓
+11. DECISION SUPPORT
+        ↓
+12. DASHBOARD VISUALIZATION
+
+---
+
+🤖 Machine Learning Pipeline
+
+AERONEX uses machine learning as part of its predictive maintenance architecture.
+
+Input
+
+Engine telemetry:
+
+RPM
+MAP
+Oil Pressure
+Oil Temperature
+CHT
+EGT
+Fuel Flow
+Vibration
+Throttle
+Engine Load
+Altitude
+Ambient Conditions
+
+Processing
+
+Raw Telemetry
+      ↓
+Cleaning
+      ↓
+Validation
+      ↓
+Feature Preparation
+      ↓
+ML Model
+      ↓
+Health / Fault Prediction
+      ↓
+Degradation & Prognostics
+
+Output
+
+The ML layer can provide information such as:
+
+- Anomaly status
+- Fault condition
+- Fault severity
+- Engine health state
+- Degradation trend
+- RUL estimate
+
+---
+
+🪞 Digital Twin
+
+The Digital Twin is one of the core concepts of AERONEX.
+
+Instead of treating telemetry as isolated numbers, AERONEX uses the incoming data to represent the current state of the engine digitally.
+
+                PHYSICAL WORLD
+
+              Aero Piston Engine
+                      │
+                      │ Telemetry
+                      ▼
+               ┌─────────────┐
+               │   AERONEX   │
+               │ Digital Twin│
+               └──────┬──────┘
+                      │
+          ┌───────────┼───────────┐
+          ▼           ▼           ▼
+       Health      Faults      Degradation
+          │           │           │
+          └───────────┼───────────┘
+                      ▼
+                 Prognostics
+                      │
+                      ▼
+                Mission Impact
+
+---
+
+🚨 Fault & Anomaly Detection
+
+AERONEX analyzes engine behavior to identify abnormal operating patterns.
+
+The system considers fault categories such as:
+
+Fault Category| Example Indicators
+Lubrication| Oil pressure / temperature abnormalities
+Cooling| CHT / thermal abnormalities
+Bearing| Abnormal vibration patterns
+Overheating| Elevated thermal parameters
+Performance| Abnormal engine performance
+Sensor Fault| Inconsistent telemetry behavior
+
+The purpose is to provide an early indication that an engine may require further investigation.
+
+---
+
+⏳ Prognostics & RUL
+
+AERONEX extends monitoring from current condition to future condition.
+
+Historical Engine Behavior
+          +
+Current Engine State
+          +
+Degradation Pattern
+          ↓
+      Prognostics
+          ↓
+   RUL Estimation
+
+RUL — Remaining Useful Life represents an estimate of how much operational life remains before the engine reaches a defined degraded or failure condition.
+
+---
+
+🛫 Mission Simulation
+
+The mission simulation layer evaluates engine behavior under different operational scenarios.
+
+Example mission variables include:
+
+- Altitude
+- Engine load
+- Throttle
+- Operating duration
+- Environmental conditions
+- Engine health state
+
+Mission Parameters
+       ↓
+Engine Operating Conditions
+       ↓
+Engine Response
+       ↓
+Health / Degradation
+       ↓
+Mission Reliability Analysis
+
+This connects predictive engine health with mission-level analysis.
+
+---
+
+🧠 Decision Support
+
+The final objective is not simply to produce ML predictions.
+
+AERONEX converts technical outputs into information that can support engineering decisions.
+
+Raw Data
+   ↓
+Information
+   ↓
+Prediction
+   ↓
+Risk / Health Insight
+   ↓
+Decision Support
+
+Examples of dashboard information include:
+
+- Current engine health
+- Active alerts
+- Detected anomalies
+- Fault information
+- Degradation trends
+- RUL
+- Mission impact
+
+---
+
+📡 Backend Architecture
+
+The AERONEX backend is built using FastAPI.
+
+                    ┌──────────────┐
+                    │    React     │
+                    │  Dashboard   │
+                    └──────┬───────┘
+                           │
+                    HTTP / WebSocket
+                           │
+                           ▼
+                  ┌─────────────────┐
+                  │     FastAPI     │
+                  │      API        │
+                  └────────┬────────┘
+                           │
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │
+        ▼                  ▼                  ▼
+   Telemetry           Analysis           Alerts
+      API                API                API
+        │                  │                  │
+        └──────────────────┼──────────────────┘
+                           │
+                ┌──────────┴──────────┐
+                ▼                     ▼
+          ML / Digital Twin      Database
+                │                     │
+                └──────────┬──────────┘
+                           ▼
+                     API Response
+                           │
+                           ▼
+                       Dashboard
+
+---
+
+🔌 API Communication
+
+The frontend communicates with the backend through APIs.
+
+Example:
+
+POST /api/telemetry
+
+Telemetry is sent as structured JSON.
+
+Example:
+
+{
+  "engine_id": "ENG001",
+  "rpm": 2450,
+  "oil_pressure": 48.5,
+  "oil_temperature": 92.4,
+  "cht": 165.2,
+  "egt": 710.5,
+  "fuel_flow": 12.4,
+  "vibration": 0.18,
+  "throttle": 72,
+  "engine_load": 68
+}
+
+FastAPI validates the incoming request before passing the data to the relevant backend components.
+
+---
+
+🗄️ Database Architecture
+
+The database provides persistent storage for engine and telemetry information.
+
+                FastAPI
+                   │
+                   ▼
+             Database Layer
+                   │
+        ┌──────────┼──────────┐
+        ▼          ▼          ▼
+    Telemetry   Engine      Mission
+      Data       Data        Data
+        │          │          │
+        └──────────┼──────────┘
+                   ▼
+             ML / Analysis
+
+The deployment architecture uses Supabase/PostgreSQL for cloud database integration.
+
+---
+
+🖥️ Frontend
+
+The AERONEX dashboard is built using:
+
+- React
+- TypeScript
+- Vite
+- Data visualization components
+
+The dashboard presents the outputs of the backend and intelligence layers in an operator-friendly interface.
+
+Key dashboard areas include:
+
+Dashboard
+├── Engine Overview
+├── Live Telemetry
+├── Health Monitoring
+├── Fault & Anomaly Alerts
+├── Degradation
+├── RUL
+├── Mission Analysis
+└── Decision Support
 
 ---
 
 🛠️ Technology Stack
 
-Backend
-
-- Python
-- FastAPI
-- Pydantic
-- SQLAlchemy
-- PostgreSQL / Supabase
-- WebSockets
-- Uvicorn
-
-Machine Learning
-
-- Python
-- Scikit-learn
-- Pandas
-- NumPy
-- Machine-learning-based anomaly and health analysis
-- Time-series telemetry analysis
-
-Frontend
-
-- React
-- Vite
-- TypeScript
-- Interactive data visualization
-
-Database
-
-- PostgreSQL
-- Supabase
-- Structured telemetry and engine-related data storage
-
-Development & Deployment
-
-- Git & GitHub
-- Docker
-- REST APIs
-- WebSocket-based real-time communication
+Layer| Technologies
+Frontend| React, TypeScript, Vite
+Backend| Python, FastAPI
+Validation| Pydantic
+Database ORM| SQLAlchemy
+Database| PostgreSQL / Supabase
+ML| Python, Scikit-learn, Pandas, NumPy
+Real-Time| WebSockets
+API| REST
+Server| Uvicorn
+Containerization| Docker
+Version Control| Git & GitHub
 
 ---
 
-📊 Telemetry Parameters
+📁 Project Structure
 
-AERONEX works with telemetry such as:
-
-Parameter| Purpose
-RPM| Engine rotational speed
-MAP| Manifold pressure
-Oil Pressure| Lubrication-system monitoring
-Oil Temperature| Lubrication/thermal monitoring
-CHT| Cylinder thermal condition
-EGT| Exhaust/combustion condition
-Fuel Flow| Fuel consumption behavior
-Vibration| Mechanical condition monitoring
-Throttle| Engine demand
-Engine Load| Operating load
-Altitude| Mission/environmental condition
-Ambient Temperature| Environmental influence
-Ambient Pressure| Environmental influence
-
----
-
-🔄 Backend Data Flow
-
-The backend acts as the communication layer between the frontend, database, and intelligence modules.
-
-Frontend
-   │
-   │ HTTP / WebSocket
-   ↓
-FastAPI Backend
-   │
-   ├── Telemetry API
-   ├── Engine Health API
-   ├── Alerts API
-   ├── Analysis API
-   ├── Prognostics / RUL API
-   └── Mission API
-   │
-   ↓
-Database
-   │
-   ↓
-ML + Digital Twin + Simulation
-   │
-   ↓
-Processed Results
-   │
-   ↓
-Frontend Dashboard
+AERONEX_GAT/
+│
+├── Backend/
+│   ├── app/
+│   │   ├── routes/
+│   │   ├── models/
+│   │   ├── schemas/
+│   │   ├── services/
+│   │   └── main.py
+│   │
+│   ├── requirements.txt
+│   ├── Dockerfile
+│   └── .env.example
+│
+├── Database/
+│   └── Database components
+│
+├── Frontend/
+│   └── React application
+│
+├── ML/
+│   └── Machine Learning pipeline
+│
+├── Simulation/
+│   └── Engine / mission simulation
+│
+└── README.md
 
 ---
 
-🔌 API Layer
+🚀 Running the Project
 
-AERONEX exposes backend functionality through REST APIs and real-time communication.
+1. Clone the repository
 
-Example telemetry endpoint:
+git clone <YOUR_REPOSITORY_URL>
+cd AERONEX_GAT
 
-POST /api/telemetry
+2. Backend Setup
 
-This endpoint receives structured telemetry data, validates it using Pydantic, processes the request through the backend, and stores/forwards the relevant information for downstream analysis.
+cd Backend
+python -m venv venv
 
-The API documentation is automatically available through FastAPI's OpenAPI interface.
+Activate the environment on Windows:
 
-/docs
-/openapi.json
+venv\Scripts\activate
 
----
+Install dependencies:
 
-🗄️ Data Model
+pip install -r requirements.txt
 
-Telemetry is represented using structured fields such as:
+Run the backend:
 
-timestamp
-engine_id
-mission_id
-rpm
-manifold_pressure
-oil_pressure
-oil_temperature
-cht
-egt
-fuel_flow
-vibration
-ambient_temperature
-ambient_pressure
-altitude
-throttle
-engine_load
-fault_label
-fault_severity
-health_state
+python -m uvicorn app.main:app --reload --port 8001
 
-This standardized data contract allows the simulation, backend, database, ML pipeline, and frontend to communicate using a consistent structure.
+Backend API:
+
+http://localhost:8001
+
+Interactive API documentation:
+
+http://localhost:8001/docs
 
 ---
 
-🎯 Why AERONEX?
+🔐 Environment Configuration
 
-AERONEX brings multiple capabilities into a single platform:
+Create a ".env" file based on ".env.example".
 
-Real-Time Monitoring + Digital Twin + AI + Prognostics + RUL + Mission Simulation + Decision Support
+Typical configuration includes database and application settings.
 
-Instead of simply displaying sensor values, the platform aims to provide a deeper understanding of:
-
-- Current engine condition
-- Abnormal behavior
-- Potential fault conditions
-- Degradation trends
-- Remaining useful life
-- Mission-level implications
+«Never commit production credentials, API keys, passwords, or secret environment variables to GitHub.»
 
 ---
 
-🌍 Potential Impact
+🐳 Docker
 
-AERONEX can support UAV operators and maintenance teams by enabling:
+Docker provides a consistent environment for running the application and its dependencies.
 
-- Early identification of abnormal engine behavior
-- Predictive maintenance planning
-- Reduced unexpected engine failures
-- Improved engine utilization
-- Better mission preparation
-- Data-driven maintenance decisions
-- Improved operational reliability
+Application
+     ↓
+Docker Image
+     ↓
+Container
+     ↓
+Consistent Runtime Environment
+
+This helps reduce environment-specific deployment issues when moving from local development to deployment.
+
+---
+
+📈 Current Implementation
+
+AERONEX currently demonstrates the complete predictive engine-monitoring workflow using simulated engine telemetry.
+
+The architecture is designed so that the telemetry source can be replaced with real engine/IoT/avionics telemetry in future deployments.
+
+Current:
+
+Simulator → AERONEX → AI/ML → Dashboard
+
+Future:
+
+Real Engine → Sensors/Telemetry → AERONEX → AI/ML → Dashboard
 
 ---
 
 🔮 Future Scope
 
-Potential future enhancements include:
+Real Engine Integration
 
-- Integration with real UAV engine telemetry
-- Edge deployment for onboard inference
-- More advanced time-series forecasting models
-- Physics-informed Digital Twin models
-- Explainable AI for model decisions
-- Automated maintenance recommendations
-- Multi-engine fleet monitoring
-- Historical health trend analysis
-- Integration with real-world avionics/IoT telemetry systems
+Connect AERONEX to real UAV engine telemetry.
+
+Edge AI
+
+Deploy lightweight inference closer to the engine for low-latency analysis.
+
+Physics-Informed Digital Twin
+
+Combine physical engine equations with data-driven ML models.
+
+Explainable AI
+
+Provide explanations for why the system identified a fault or abnormal condition.
+
+Fleet Intelligence
+
+Monitor multiple UAV engines simultaneously.
+
+Advanced Time-Series Models
+
+Explore advanced temporal forecasting and sequence models for degradation and RUL estimation.
+
+Automated Maintenance Planning
+
+Convert predictions into maintenance scheduling recommendations.
 
 ---
 
-👥 Team AETHERIS
+🌟 Why AERONEX?
+
+AERONEX is designed as more than a telemetry dashboard.
+
+        MONITOR
+           ↓
+        UNDERSTAND
+           ↓
+        PREDICT
+           ↓
+        SIMULATE
+           ↓
+        SUPPORT
+        DECISIONS
+
+It brings together:
+
+Real-Time Monitoring + Digital Twin + AI/ML + Fault Detection + Prognostics + RUL + Mission Simulation + Decision Support
+
+into a single platform for intelligent aero-engine health management.
+
+---
+
+👥 Team AETHERIS_GAT
 
 Smart India Hackathon 2026
 
+Team ID: 149433
+
 Member| Contribution
-Vidya M| Backend, ML & System Integration
-Srushti| Backend & ML
-Sab| Backend & ML
+Vidya M| Backend
+Srushti| ML
+Sab| Frontend 
 Krutin Bhat| Database
 Samarth| Simulation
 Deekshith| UI & Presentation
 
-Team ID: "GAT001"
+---
+
+🏆 Project Vision
+
+«From monitoring engine parameters to predicting engine behavior and understanding mission impact.»
+
+AERONEX — Turning Engine Telemetry into Predictive Intelligence.
 
 ---
 
-📌 Project Status
-
-🚧 Active Development
-
-The current version demonstrates the integrated AERONEX workflow using simulated engine telemetry and AI-driven analysis.
-
-The architecture is designed to support future integration with real engine telemetry sources.
-
----
-
-📜 License
-
-This project was developed as part of Smart India Hackathon 2026 by Team AETHERIS.
-
----
-
-<p align="center">✈️ AERONEX
-
-Turning Engine Data into Predictive Intelligence
+<p align="center">✈️ AERONEX | Team AETHERIS_GAT | 149433
 
 </p>
