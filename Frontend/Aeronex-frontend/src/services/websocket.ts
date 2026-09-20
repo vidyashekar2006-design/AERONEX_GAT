@@ -146,6 +146,12 @@ export type ConnectionListener = (
 ) => void;
 
 const getWebSocketUrl = (): string => {
+  const configuredUrl = import.meta.env.VITE_AERONEX_WS_URL;
+
+  if (configuredUrl) {
+    return configuredUrl;
+  }
+
   const protocol =
     window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 
