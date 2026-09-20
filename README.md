@@ -667,6 +667,7 @@ Deployment| Render / Supabase
 
 📁 Project Structure
 
+
 AERONEX_GAT/
 │
 ├── Backend/
