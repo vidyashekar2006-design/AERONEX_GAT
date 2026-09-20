@@ -469,8 +469,9 @@ export const SimulationProvider: React.FC<{
 
     const socket =
       new WebSocket(
+         import.meta.env.VITE_SIMULATION_WS_URL ||
         'ws://localhost:8000/ws/simulation'
-      );
+        )
 
     socketRef.current = socket;
 
