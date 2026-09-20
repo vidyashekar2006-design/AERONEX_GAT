@@ -1,58 +1,882 @@
-import argparse, json, sys
+from __future__ import annotations
+
+import argparse
+import json
 from pathlib import Path
-import pandas as pd, numpy as np
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, IsolationForest
-from sklearn.metrics import classification_report, f1_score, precision_score, recall_score, accuracy_score, mean_absolute_error, mean_squared_error, r2_score, roc_auc_score, brier_score_loss
-from sklearn.inspection import permutation_importance
+
+import joblib
+import numpy as np
+import pandas as pd
+
+from sklearn.ensemble import (
+    ExtraTreesClassifier,
+    ExtraTreesRegressor,
+    IsolationForest,
+)
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    f1_score,
+    mean_absolute_error,
+    mean_squared_error,
+    precision_score,
+    r2_score,
+    recall_score,
+    roc_auc_score,
+)
 from sklearn.model_selection import GroupShuffleSplit
-from aeronex_ml.preprocessing.validation import validate_telemetry
-from aeronex_ml.preprocessing.cleaning import clean_telemetry
-from aeronex_ml.features.telemetry_features import build_features, feature_columns
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
 
-TARGETS={"health":"health_index","degradation":"degradation_index","rul":"rul_hours","mission":"mission_completion"}
 
-def split(df):
-    engines=np.array(sorted(df.engine_id.unique())); rng=np.random.default_rng(42); rng.shuffle(engines)
-    n=len(engines); tr=engines[:max(1,int(.7*n))]; va=engines[max(1,int(.7*n)):max(2,int(.85*n))]; te=engines[max(2,int(.85*n)):]
-    return df[df.engine_id.isin(tr)].copy(),df[df.engine_id.isin(va)].copy(),df[df.engine_id.isin(te)].copy()
+RANDOM_STATE = 42
 
-def make_preprocessor(X):
-    nums=[c for c in X.columns if pd.api.types.is_numeric_dtype(X[c])]; cats=[c for c in X.columns if c not in nums]
-    return ColumnTransformer([("num",Pipeline([("imp",SimpleImputer(strategy="median")),("scale",StandardScaler())]),nums),("cat",Pipeline([("imp",SimpleImputer(strategy="most_frequent")),("oh",OneHotEncoder(handle_unknown="ignore",sparse_output=False))]),cats)],remainder="drop")
 
-def train(args):
-    df=pd.read_csv(args.data,parse_dates=["timestamp"]); report=validate_telemetry(df); df=clean_telemetry(df); feat=build_features(df);
-    tr,va,te=split(feat); feature_cols=feature_columns(feat); Xtr=tr[feature_cols];
-    meta={"data_source":"real_project_provided_dataset","dataset":"aeronex_engine_telemetry.csv","validation":report.to_dict(),"split":{"strategy":"engine-held-out chronological-by-engine","train_engines":sorted(tr.engine_id.unique().tolist()),"validation_engines":sorted(va.engine_id.unique().tolist()),"test_engines":sorted(te.engine_id.unique().tolist())},"features":feature_cols,"version":"0.1.0"}
-    out=Path(args.out); (out/'models').mkdir(parents=True,exist_ok=True); (out/'metadata').mkdir(parents=True,exist_ok=True); (out/'preprocessors').mkdir(parents=True,exist_ok=True)
-    # Health: supervised baseline using provided health_index label; explicitly not a physical validation.
-    for name,target,kind in [("health","health_index","reg"),("degradation","degradation_index","reg"),("rul","rul_hours","reg"),("mission","mission_completion","clf")]:
-        Xtr2=tr[feature_cols]; Xva=va[feature_cols]; Xte=te[feature_cols]
-        prep=make_preprocessor(Xtr2)
-        model=RandomForestRegressor(n_estimators=20,random_state=42,n_jobs=-1,min_samples_leaf=3) if kind=='reg' else RandomForestClassifier(n_estimators=20,random_state=42,n_jobs=-1,class_weight='balanced',min_samples_leaf=3)
-        pipe=Pipeline([('prep',prep),('model',model)]); pipe.fit(Xtr2,tr[target])
-        pred=pipe.predict(Xte); m={"target":target,"kind":kind,"algorithm":type(model).__name__,"data_source":"real_project_provided_dataset"}; val_pred=pipe.predict(Xva)
-        if kind=='reg': m.update({"validation_MAE":float(mean_absolute_error(va[target],val_pred)),"validation_RMSE":float(np.sqrt(mean_squared_error(va[target],val_pred))),"validation_R2":float(r2_score(va[target],val_pred)),"MAE":float(mean_absolute_error(te[target],pred)),"RMSE":float(np.sqrt(mean_squared_error(te[target],pred))),"R2":float(r2_score(te[target],pred))})
-        else:
-            val_prob=pipe.predict_proba(Xva)[:,1]; prob=pipe.predict_proba(Xte)[:,1]; m.update({"validation_f1":float(f1_score(va[target],val_pred,zero_division=0)),"validation_roc_auc":float(roc_auc_score(va[target],val_prob)),"accuracy":float(accuracy_score(te[target],pred)),"precision":float(precision_score(te[target],pred,zero_division=0)),"recall":float(recall_score(te[target],pred,zero_division=0)),"f1":float(f1_score(te[target],pred,zero_division=0)),"roc_auc":float(roc_auc_score(te[target],prob)),"brier":float(brier_score_loss(te[target],prob))})
-        import joblib; joblib.dump(pipe,out/f'models/{name}.joblib'); (out/f'metadata/{name}.json').write_text(json.dumps({**meta,"model_name":name,"model_type":type(model).__name__,"test_metrics":m},indent=2,default=str))
-    # Fault classifier: exclude normal? Keep 5-class classifier.
-    prep=make_preprocessor(tr[feature_cols]); base=RandomForestClassifier(n_estimators=30,random_state=42,n_jobs=-1,class_weight='balanced',min_samples_leaf=2); pipe=Pipeline([('prep',prep),('model',base)]); pipe.fit(tr[feature_cols],tr.fault_type)
-    p=pipe.predict(te[feature_cols]); prob=pipe.predict_proba(te[feature_cols]); m={"accuracy":float(accuracy_score(te.fault_type,p)),"precision_macro":float(precision_score(te.fault_type,p,average='macro',zero_division=0)),"recall_macro":float(recall_score(te.fault_type,p,average='macro',zero_division=0)),"f1_macro":float(f1_score(te.fault_type,p,average='macro',zero_division=0))}
-    import joblib; joblib.dump(pipe,out/'models/fault.joblib'); (out/'metadata/fault.json').write_text(json.dumps({**meta,"model_name":"fault","model_type":"CalibratedRandomForestClassifier","classes":pipe.classes_.tolist(),"test_metrics":m},indent=2,default=str))
-    # Anomaly: fit only on normal training rows, contamination derived from normal data false positive target rather than labels.
-    normal=tr[tr.fault_type=='normal']; prep=make_preprocessor(normal[feature_cols]); iso=Pipeline([('prep',prep),('model',IsolationForest(n_estimators=20,random_state=42,contamination='auto',n_jobs=-1))]); iso.fit(normal[feature_cols]); joblib.dump(iso,out/'models/anomaly.joblib'); (out/'metadata/anomaly.json').write_text(json.dumps({**meta,"model_name":"anomaly","model_type":"IsolationForest","training_population":"normal fault_type rows only","evaluation_note":"Unsupervised score; threshold selected at inference from decision-function quantile on training normal population. No supervised accuracy claimed."},indent=2,default=str))
-    # thresholds from training normal scores; evaluate against held-out labels without fitting on them
-    scores=-iso.decision_function(normal[feature_cols]); thresholds={"warning":float(np.quantile(scores,.95)),"high":float(np.quantile(scores,.99))};
-    test_scores=-iso.decision_function(te[feature_cols]); test_flag=test_scores>=thresholds["warning"]; y=te.anomaly.astype(int).to_numpy();
-    tp=int(((test_flag==1)&(y==1)).sum()); fp=int(((test_flag==1)&(y==0)).sum()); fn=int(((test_flag==0)&(y==1)).sum()); tn=int(((test_flag==0)&(y==0)).sum());
-    anomaly_eval={"threshold_warning":thresholds["warning"],"test_precision":float(tp/max(1,tp+fp)),"test_recall":float(tp/max(1,tp+fn)),"test_false_positive_rate":float(fp/max(1,fp+tn)),"note":"Post-hoc evaluation only; model fit used normal training rows and threshold used training-normal score quantile."};
-    (out/'metadata/anomaly_evaluation.json').write_text(json.dumps(anomaly_eval,indent=2)); (out/'metadata/anomaly_thresholds.json').write_text(json.dumps(thresholds,indent=2))
-    # global metadata
-    (out/'metadata/manifest.json').write_text(json.dumps(meta,indent=2,default=str)); print(json.dumps({"validation":report.to_dict(),"artifacts":str(out)},indent=2))
-if __name__=='__main__':
- ap=argparse.ArgumentParser(); ap.add_argument('--data',required=True); ap.add_argument('--out',default='artifacts'); train(ap.parse_args())
+FEATURES = [
+    "rpm",
+    "cht",
+    "egt",
+    "oil_temperature",
+    "oil_pressure",
+    "fuel_flow",
+    "vibration",
+    "throttle",
+    "altitude",
+    "ambient_temperature",
+]
+
+
+TARGETS = {
+    "health": "health_index",
+    "degradation": "degradation_index",
+    "rul": "rul_hours",
+}
+
+
+def rmse(y_true, y_pred):
+    return float(
+        np.sqrt(
+            mean_squared_error(
+                y_true,
+                y_pred,
+            )
+        )
+    )
+
+
+def load_dataset(path: Path) -> pd.DataFrame:
+
+    df = pd.read_csv(path)
+
+    required = (
+        FEATURES
+        + [
+            "engine_id",
+            "fault_type",
+            "anomaly",
+            "health_index",
+            "degradation_index",
+            "rul_hours",
+            "mission_success",
+        ]
+    )
+
+    missing = [
+        column
+        for column in required
+        if column not in df.columns
+    ]
+
+    if missing:
+        raise ValueError(
+            f"Missing required columns: {missing}"
+        )
+
+    df = df.sort_values(
+        ["engine_id", "sim_time"]
+    ).reset_index(drop=True)
+
+    return df
+
+
+def split_by_engine(df):
+
+    groups = df["engine_id"].unique()
+
+    splitter = GroupShuffleSplit(
+        n_splits=1,
+        test_size=0.20,
+        random_state=RANDOM_STATE,
+    )
+
+    train_idx, test_idx = next(
+        splitter.split(
+            df,
+            groups=df["engine_id"],
+        )
+    )
+
+    train = df.iloc[train_idx].copy()
+    test = df.iloc[test_idx].copy()
+
+    splitter2 = GroupShuffleSplit(
+        n_splits=1,
+        test_size=0.25,
+        random_state=RANDOM_STATE,
+    )
+
+    train_idx2, validation_idx = next(
+        splitter2.split(
+            train,
+            groups=train["engine_id"],
+        )
+    )
+
+    train_final = train.iloc[
+        train_idx2
+    ].copy()
+
+    validation = train.iloc[
+        validation_idx
+    ].copy()
+
+    return (
+        train_final,
+        validation,
+        test,
+    )
+
+
+def make_classifier():
+
+    return Pipeline(
+        [
+            (
+                "scaler",
+                StandardScaler(),
+            ),
+            (
+                "model",
+                ExtraTreesClassifier(
+                    n_estimators=300,
+                    random_state=RANDOM_STATE,
+                    n_jobs=-1,
+                    class_weight="balanced",
+                    min_samples_leaf=2,
+                ),
+            ),
+        ]
+    )
+
+
+def make_regressor():
+
+    return Pipeline(
+        [
+            (
+                "scaler",
+                StandardScaler(),
+            ),
+            (
+                "model",
+                ExtraTreesRegressor(
+                    n_estimators=300,
+                    random_state=RANDOM_STATE,
+                    n_jobs=-1,
+                    min_samples_leaf=2,
+                ),
+            ),
+        ]
+    )
+
+
+def evaluate_classifier(
+    model,
+    X,
+    y,
+):
+
+    predictions = model.predict(X)
+
+    metrics = {
+        "accuracy": float(
+            accuracy_score(
+                y,
+                predictions,
+            )
+        ),
+        "precision_macro": float(
+            precision_score(
+                y,
+                predictions,
+                average="macro",
+                zero_division=0,
+            )
+        ),
+        "recall_macro": float(
+            recall_score(
+                y,
+                predictions,
+                average="macro",
+                zero_division=0,
+            )
+        ),
+        "f1_macro": float(
+            f1_score(
+                y,
+                predictions,
+                average="macro",
+                zero_division=0,
+            )
+        ),
+        "confusion_matrix": (
+            confusion_matrix(
+                y,
+                predictions,
+            ).tolist()
+        ),
+        "classification_report": (
+            classification_report(
+                y,
+                predictions,
+                output_dict=True,
+                zero_division=0,
+            )
+        ),
+    }
+
+    if hasattr(model, "predict_proba"):
+
+        probabilities = model.predict_proba(X)
+
+        if len(
+            np.unique(y)
+        ) == 2:
+
+            metrics["roc_auc"] = float(
+                roc_auc_score(
+                    y,
+                    probabilities[:, 1],
+                )
+            )
+
+    return metrics
+
+
+def evaluate_regressor(
+    model,
+    X,
+    y,
+):
+
+    predictions = model.predict(X)
+
+    return {
+        "MAE": float(
+            mean_absolute_error(
+                y,
+                predictions,
+            )
+        ),
+        "RMSE": rmse(
+            y,
+            predictions,
+        ),
+        "R2": float(
+            r2_score(
+                y,
+                predictions,
+            )
+        ),
+    }
+
+
+def train_fault_model(
+    train,
+    validation,
+    test,
+    output,
+):
+
+    model = make_classifier()
+
+    X_train = train[FEATURES]
+    y_train = train["fault_type"]
+
+    model.fit(
+        X_train,
+        y_train,
+    )
+
+    validation_metrics = evaluate_classifier(
+        model,
+        validation[FEATURES],
+        validation["fault_type"],
+    )
+
+    test_metrics = evaluate_classifier(
+        model,
+        test[FEATURES],
+        test["fault_type"],
+    )
+
+    joblib.dump(
+        model,
+        output / "models" / "fault.joblib",
+    )
+
+    metadata = {
+        "model": "fault",
+        "algorithm": "ExtraTreesClassifier",
+        "features": FEATURES,
+        "validation": validation_metrics,
+        "test": test_metrics,
+    }
+
+    write_metadata(
+        output,
+        "fault",
+        metadata,
+    )
+
+    print("\nFAULT MODEL")
+    print(
+        json.dumps(
+            test_metrics,
+            indent=2,
+        )
+    )
+
+
+def train_health_model(
+    train,
+    validation,
+    test,
+    output,
+):
+
+    model = make_regressor()
+
+    model.fit(
+        train[FEATURES],
+        train["health_index"],
+    )
+
+    validation_metrics = evaluate_regressor(
+        model,
+        validation[FEATURES],
+        validation["health_index"],
+    )
+
+    test_metrics = evaluate_regressor(
+        model,
+        test[FEATURES],
+        test["health_index"],
+    )
+
+    joblib.dump(
+        model,
+        output / "models" / "health.joblib",
+    )
+
+    write_metadata(
+        output,
+        "health",
+        {
+            "model": "health",
+            "algorithm": "ExtraTreesRegressor",
+            "target": "health_index",
+            "features": FEATURES,
+            "validation": validation_metrics,
+            "test": test_metrics,
+        },
+    )
+
+    print("\nHEALTH MODEL")
+    print(
+        json.dumps(
+            test_metrics,
+            indent=2,
+        )
+    )
+
+
+def train_degradation_model(
+    train,
+    validation,
+    test,
+    output,
+):
+
+    model = make_regressor()
+
+    model.fit(
+        train[FEATURES],
+        train["degradation_index"],
+    )
+
+    validation_metrics = evaluate_regressor(
+        model,
+        validation[FEATURES],
+        validation["degradation_index"],
+    )
+
+    test_metrics = evaluate_regressor(
+        model,
+        test[FEATURES],
+        test["degradation_index"],
+    )
+
+    joblib.dump(
+        model,
+        output / "models" / "degradation.joblib",
+    )
+
+    write_metadata(
+        output,
+        "degradation",
+        {
+            "model": "degradation",
+            "algorithm": "ExtraTreesRegressor",
+            "target": "degradation_index",
+            "features": FEATURES,
+            "validation": validation_metrics,
+            "test": test_metrics,
+        },
+    )
+
+    print("\nDEGRADATION MODEL")
+    print(
+        json.dumps(
+            test_metrics,
+            indent=2,
+        )
+    )
+
+
+def train_rul_model(
+    train,
+    validation,
+    test,
+    output,
+):
+
+    model = make_regressor()
+
+    model.fit(
+        train[FEATURES],
+        train["rul_hours"],
+    )
+
+    validation_metrics = evaluate_regressor(
+        model,
+        validation[FEATURES],
+        validation["rul_hours"],
+    )
+
+    test_metrics = evaluate_regressor(
+        model,
+        test[FEATURES],
+        test["rul_hours"],
+    )
+
+    joblib.dump(
+        model,
+        output / "models" / "rul.joblib",
+    )
+
+    write_metadata(
+        output,
+        "rul",
+        {
+            "model": "rul",
+            "algorithm": "ExtraTreesRegressor",
+            "target": "rul_hours",
+            "features": FEATURES,
+            "validation": validation_metrics,
+            "test": test_metrics,
+            "note": (
+                "RUL is a synthetic representative "
+                "research target generated by the "
+                "Aeronex simulation dataset."
+            ),
+        },
+    )
+
+    print("\nRUL MODEL")
+    print(
+        json.dumps(
+            test_metrics,
+            indent=2,
+        )
+    )
+
+
+def train_mission_model(
+    train,
+    validation,
+    test,
+    output,
+):
+
+    model = make_classifier()
+
+    model.fit(
+        train[FEATURES],
+        train["mission_success"],
+    )
+
+    validation_metrics = evaluate_classifier(
+        model,
+        validation[FEATURES],
+        validation["mission_success"],
+    )
+
+    test_metrics = evaluate_classifier(
+        model,
+        test[FEATURES],
+        test["mission_success"],
+    )
+
+    joblib.dump(
+        model,
+        output / "models" / "mission.joblib",
+    )
+
+    write_metadata(
+        output,
+        "mission",
+        {
+            "model": "mission",
+            "algorithm": "ExtraTreesClassifier",
+            "target": "mission_success",
+            "features": FEATURES,
+            "validation": validation_metrics,
+            "test": test_metrics,
+        },
+    )
+
+    print("\nMISSION MODEL")
+    print(
+        json.dumps(
+            test_metrics,
+            indent=2,
+        )
+    )
+
+
+def train_anomaly_model(
+    train,
+    test,
+    output,
+):
+
+    normal = train[
+        train["fault_type"] == "normal"
+    ]
+
+    model = Pipeline(
+        [
+            (
+                "scaler",
+                StandardScaler(),
+            ),
+            (
+                "model",
+                IsolationForest(
+                    n_estimators=300,
+                    random_state=RANDOM_STATE,
+                    contamination="auto",
+                    n_jobs=-1,
+                ),
+            ),
+        ]
+    )
+
+    model.fit(
+        normal[FEATURES]
+    )
+
+    normal_scores = -model.decision_function(
+        normal[FEATURES]
+    )
+
+    warning_threshold = float(
+        np.quantile(
+            normal_scores,
+            0.95,
+        )
+    )
+
+    high_threshold = float(
+        np.quantile(
+            normal_scores,
+            0.99,
+        )
+    )
+
+    test_scores = -model.decision_function(
+        test[FEATURES]
+    )
+
+    predicted_anomaly = (
+        test_scores >= warning_threshold
+    ).astype(int)
+
+    true_anomaly = test[
+        "anomaly"
+    ].astype(int).to_numpy()
+
+    metrics = {
+        "warning_threshold": warning_threshold,
+        "high_threshold": high_threshold,
+        "precision": float(
+            precision_score(
+                true_anomaly,
+                predicted_anomaly,
+                zero_division=0,
+            )
+        ),
+        "recall": float(
+            recall_score(
+                true_anomaly,
+                predicted_anomaly,
+                zero_division=0,
+            )
+        ),
+        "f1": float(
+            f1_score(
+                true_anomaly,
+                predicted_anomaly,
+                zero_division=0,
+            )
+        ),
+    }
+
+    joblib.dump(
+        model,
+        output / "models" / "anomaly.joblib",
+    )
+
+    write_metadata(
+        output,
+        "anomaly",
+        {
+            "model": "anomaly",
+            "algorithm": "IsolationForest",
+            "features": FEATURES,
+            "training_population": (
+                "normal telemetry only"
+            ),
+            "thresholds": {
+                "warning": warning_threshold,
+                "high": high_threshold,
+            },
+            "test": metrics,
+        },
+    )
+
+    print("\nANOMALY MODEL")
+    print(
+        json.dumps(
+            metrics,
+            indent=2,
+        )
+    )
+
+
+def write_metadata(
+    output,
+    name,
+    metadata,
+):
+
+    path = (
+        output
+        / "metadata"
+        / f"{name}.json"
+    )
+
+    path.write_text(
+        json.dumps(
+            metadata,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
+def main():
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--data",
+        default=(
+            "data/generated/"
+            "aeronex_ml_v2.csv"
+        ),
+    )
+
+    parser.add_argument(
+        "--out",
+        default="artifacts",
+    )
+
+    args = parser.parse_args()
+
+    data_path = Path(args.data)
+    output = Path(args.out)
+
+    output.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    for directory in [
+        output / "models",
+        output / "metadata",
+        output / "preprocessors",
+    ]:
+        directory.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+    print(
+        f"Loading dataset: {data_path}"
+    )
+
+    df = load_dataset(
+        data_path
+    )
+
+    print(
+        f"Rows: {len(df):,}"
+    )
+
+    print(
+        f"Engines: "
+        f"{df.engine_id.nunique()}"
+    )
+
+    train, validation, test = (
+        split_by_engine(df)
+    )
+
+    print("\nDATA SPLIT")
+    print(
+        f"Train rows: {len(train):,}"
+    )
+    print(
+        f"Validation rows: "
+        f"{len(validation):,}"
+    )
+    print(
+        f"Test rows: {len(test):,}"
+    )
+
+    print(
+        "\nTraining engines:",
+        train.engine_id.nunique(),
+    )
+
+    print(
+        "Validation engines:",
+        validation.engine_id.nunique(),
+    )
+
+    print(
+        "Test engines:",
+        test.engine_id.nunique(),
+    )
+
+    train_fault_model(
+        train,
+        validation,
+        test,
+        output,
+    )
+
+    train_health_model(
+        train,
+        validation,
+        test,
+        output,
+    )
+
+    train_degradation_model(
+        train,
+        validation,
+        test,
+        output,
+    )
+
+    train_rul_model(
+        train,
+        validation,
+        test,
+        output,
+    )
+
+    train_mission_model(
+        train,
+        validation,
+        test,
+        output,
+    )
+
+    train_anomaly_model(
+        train,
+        test,
+        output,
+    )
+
+    manifest = {
+        "version": "2.0.0",
+        "dataset": str(
+            data_path
+        ),
+        "rows": len(df),
+        "engines": int(
+            df.engine_id.nunique()
+        ),
+        "features": FEATURES,
+        "models": [
+            "fault",
+            "health",
+            "degradation",
+            "rul",
+            "mission",
+            "anomaly",
+        ],
+        "split": "engine-held-out",
+        "random_state": RANDOM_STATE,
+        "note": (
+            "Representative synthetic "
+            "Aeronex simulation dataset. "
+            "Not validated against a real "
+            "aero piston engine."
+        ),
+    }
+
+    write_metadata(
+        output,
+        "manifest",
+        manifest,
+    )
+
+    print(
+        "\n================================"
+    )
+    print(
+        "AERONEX ML V2 TRAINING COMPLETE"
+    )
+    print(
+        "================================"
+    )
+
+
+if __name__ == "__main__":
+    main()

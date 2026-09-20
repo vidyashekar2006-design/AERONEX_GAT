@@ -1,17 +1,63 @@
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+from typing import Any
+from urllib import error, request
+from datetime import datetime, timezone
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-import asyncio
-from datetime import datetime, timezone
-from typing import Any
+
+import sys
+from pathlib import Path
+
+SIMULATION_DIR = Path(__file__).resolve().parent.parent
+
+if str(SIMULATION_DIR) not in sys.path:
+    sys.path.insert(0, str(SIMULATION_DIR))
+
+from simulator.mission import (
+    MissionSimulator,
+    create_default_mission_profile,
+)
 
 
-app = FastAPI(title="Aeronex Backend")
+# ---------------------------------------------------------------------------
+# CONFIGURATION
+# ---------------------------------------------------------------------------
+
+HOST = os.getenv("SIMULATION_HOST", "0.0.0.0")
+PORT = int(os.getenv("SIMULATION_PORT", "8000"))
+
+# Aeronex monitoring backend.
+#
+# For local development, the Aeronex backend can run on port 8001.
+# Change this through the environment variable when deploying.
+AERONEX_BACKEND_URL = os.getenv(
+    "AERONEX_BACKEND_URL",
+    "http://127.0.0.1:8001",
+)
+
+TELEMETRY_ENDPOINT = f"{AERONEX_BACKEND_URL}/api/telemetry"
 
 
-# Allow the React frontend to communicate with FastAPI
+# ---------------------------------------------------------------------------
+# FASTAPI APPLICATION
+# ---------------------------------------------------------------------------
+
+app = FastAPI(title="Aeronex Simulation Backend")
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -19,118 +65,145 @@ app.add_middleware(
 
 
 # ---------------------------------------------------------------------------
-# EXTERNAL SIMULATION IS AUTHORITATIVE
-#
-# The backend does NOT start or advance the simulator.
-# The external simulation generates telemetry after its START button is
-# pressed. This server receives, validates, stores and broadcasts telemetry.
+# SIMULATION STATE
 # ---------------------------------------------------------------------------
 
-latest_telemetry: dict[str, Any] = {}
-telemetry_records: list[dict[str, Any]] = []
-telemetry_started = False
-last_received_at: str | None = None
-websocket_clients: set[WebSocket] = set()
+mission = MissionSimulator(create_default_mission_profile())
+
+simulation_clients: set[WebSocket] = set()
+
+simulation_task: asyncio.Task | None = None
+
+state_lock = asyncio.Lock()
 
 
-@app.get("/")
-def root():
-    return {
-        "project": "Aeronex",
-        "status": "online",
-        "simulation": "mission",
-    }
-
-
-@app.get("/status")
-def get_status():
-    return build_status()
-
-
-def _safe_float(value: Any, default: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _calculate_health(telemetry: dict[str, Any]) -> str:
-    """Rule-based fallback health classification for the prototype."""
-    cht = _safe_float(telemetry.get("cht"))
-    egt = _safe_float(telemetry.get("egt"))
-    oil_temperature = _safe_float(telemetry.get("oil_temperature"))
-    oil_pressure = _safe_float(telemetry.get("oil_pressure"))
-    vibration = _safe_float(telemetry.get("vibration"))
-
-    if (
-        cht >= 165.0
-        or egt >= 600.0
-        or oil_temperature >= 115.0
-        or oil_pressure <= 1.5
-        or vibration >= 0.75
-    ):
-        return "CRITICAL"
-
-    if (
-        cht >= 125.0
-        or egt >= 450.0
-        or oil_temperature >= 90.0
-        or oil_pressure <= 2.8
-        or vibration >= 0.50
-    ):
-        return "WARNING"
-
-    return "NORMAL"
-
-
-def _build_health_summary() -> dict[str, Any]:
-    if not latest_telemetry:
-        return {
-            "health_status": "NO_DATA",
-            "operating_mode": "IDLE",
-            "source": "external_simulation",
-        }
-
-    return {
-        "health_status": _calculate_health(latest_telemetry),
-        "operating_mode": latest_telemetry.get("operating_mode", "UNKNOWN"),
-        "source": "external_simulation",
-        "degradation": {
-            "scenario": latest_telemetry.get("degradation_scenario", "NORMAL"),
-            "enabled": bool(latest_telemetry.get("degradation_enabled", False)),
-            "severity": _safe_float(latest_telemetry.get("degradation_severity")),
-        },
-    }
-
+# ---------------------------------------------------------------------------
+# STATUS
+# ---------------------------------------------------------------------------
 
 def build_status() -> dict[str, Any]:
-    """Build dashboard state entirely from externally received telemetry."""
+    """Build the complete state sent to the Simulation UI."""
+
+    latest = mission.telemetry_records[-1] if mission.telemetry_records else {}
+
+    phase_index = mission.current_phase_index
+
+    if mission.complete:
+        phase_index = len(mission.profile.phases) - 1
+
+    total_phases = len(mission.profile.phases)
+
+    if total_phases > 0:
+        progress = (
+            (phase_index + 1) / total_phases
+        ) * 100.0
+    else:
+        progress = 0.0
+
     return {
-        "running": telemetry_started,
-        "complete": False,
-        "simulation_source": "external",
-        "timestamp": latest_telemetry.get("sim_time", 0.0),
-        "telemetry_records": len(telemetry_records),
-        "telemetry_connected": bool(latest_telemetry),
-        "last_received_at": last_received_at,
-        "digital_twin": _build_health_summary(),
-        "latest_telemetry": dict(latest_telemetry),
+        "type": "simulation_status",
+
+        "running": mission.running,
+        "complete": mission.complete,
+
+        "simulation_source": "internal_mission_simulator",
+
+        "timestamp": float(
+            mission.controller.engine.environment.mission_elapsed_time
+        ),
+
+        "telemetry_records": len(mission.telemetry_records),
+
         "mission": {
-            "name": "External Simulation Mission",
-            "current_phase": latest_telemetry.get("mission_phase"),
-            "current_phase_index": None,
-            "total_phases": None,
-            "phase_elapsed_time": latest_telemetry.get("phase_elapsed_time"),
-            "completed_phases": [],
-            "telemetry_records": len(telemetry_records),
+            "name": mission.profile.name,
+
+            "current_phase": (
+                latest.get("mission_phase")
+                if latest
+                else mission.profile.phases[0].name
+            ),
+
+            "current_phase_index": phase_index,
+
+            "total_phases": total_phases,
+
+            "progress": progress,
+
+            "phase_elapsed_time": mission.phase_elapsed_time,
+
+            "completed_phases": list(
+                mission.completed_phases
+            ),
+        },
+
+        "controls": {
+            "throttle": float(
+                mission.controller.controls.throttle
+            ),
+            "altitude": float(
+                mission.controller.controls.altitude
+            ),
+            "ambient_temperature": float(
+                mission.controller.controls.ambient_temperature
+            ),
+            "degradation_scenario": (
+                mission.controller.controls.degradation_scenario.value
+            ),
+            "degradation_enabled": bool(
+                mission.controller.controls.degradation_enabled
+            ),
+            "degradation_severity": float(
+                mission.controller.controls.degradation_severity
+            ),
+        },
+
+        "latest_telemetry": dict(latest),
+
+        "digital_twin": {
+            "health_status": (
+                mission.controller.digital_twin.health_status.value
+            ),
         },
     }
 
 
-def _normalise_telemetry(payload: dict[str, Any]) -> dict[str, Any]:
-    """Validate and normalise the external simulation telemetry contract."""
-    required_numeric = (
-        "sim_time",
+# ---------------------------------------------------------------------------
+# WEBSOCKET BROADCAST
+# ---------------------------------------------------------------------------
+
+async def broadcast_status() -> None:
+    """Broadcast the current simulation state to all connected UIs."""
+
+    if not simulation_clients:
+        return
+
+    status = build_status()
+
+    disconnected: list[WebSocket] = []
+
+    for client in simulation_clients:
+        try:
+            await client.send_json(status)
+        except Exception:
+            disconnected.append(client)
+
+    for client in disconnected:
+        simulation_clients.discard(client)
+
+
+# ---------------------------------------------------------------------------
+# TELEMETRY NORMALISATION
+# ---------------------------------------------------------------------------
+
+def normalise_telemetry(
+    telemetry: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Convert MissionSimulator telemetry into the exact
+    telemetry contract expected by the Aeronex monitoring backend.
+    """
+
+    required_fields = (
         "rpm",
         "cht",
         "egt",
@@ -144,122 +217,465 @@ def _normalise_telemetry(payload: dict[str, Any]) -> dict[str, Any]:
         "degradation_severity",
     )
 
-    normalised = dict(payload)
+    for field in required_fields:
+        if field not in telemetry:
+            raise ValueError(
+                f"Missing telemetry field: {field}"
+            )
 
-    for field in required_numeric:
-        if field not in normalised:
-            raise ValueError(f"missing telemetry field: {field}")
-        try:
-            normalised[field] = float(normalised[field])
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"invalid numeric telemetry field: {field}") from exc
+    # Build ONLY the fields accepted by TelemetryIn.
+    result = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
 
-    normalised["degradation_enabled"] = bool(
-        normalised.get("degradation_enabled", False)
+        "sim_time": float(
+            telemetry.get(
+                "sim_time",
+                telemetry.get(
+                    "mission_elapsed_time",
+                    0.0,
+                ),
+            )
+        ),
+
+        "rpm": float(telemetry["rpm"]),
+        "cht": float(telemetry["cht"]),
+        "egt": float(telemetry["egt"]),
+
+        "oil_temperature": float(
+            telemetry["oil_temperature"]
+        ),
+
+        "oil_pressure": float(
+            telemetry["oil_pressure"]
+        ),
+
+        "fuel_flow": float(
+            telemetry["fuel_flow"]
+        ),
+
+        "vibration": float(
+            telemetry["vibration"]
+        ),
+
+        "throttle": float(
+            telemetry["throttle"]
+        ),
+
+        "altitude": float(
+            telemetry["altitude"]
+        ),
+
+        "ambient_temperature": float(
+            telemetry["ambient_temperature"]
+        ),
+
+        "operating_mode": telemetry.get(
+            "operating_mode",
+            "IDLE",
+        ),
+
+        "degradation_scenario": telemetry.get(
+            "degradation_scenario",
+            "NORMAL",
+        ),
+
+        "degradation_enabled": bool(
+            telemetry.get(
+                "degradation_enabled",
+                False,
+            )
+        ),
+
+        "degradation_severity": float(
+            telemetry["degradation_severity"]
+        ),
+    }
+
+    return result
+# ---------------------------------------------------------------------------
+# SEND TELEMETRY TO AERONEX BACKEND
+# ---------------------------------------------------------------------------
+
+def _post_telemetry_sync(
+    telemetry: dict[str, Any],
+) -> None:
+    """
+    Send telemetry to the separate Aeronex monitoring backend.
+
+    Uses only Python's standard library so the Simulation Backend does not
+    require an additional HTTP client dependency.
+    """
+
+    payload = json.dumps(
+        telemetry
+    ).encode("utf-8")
+
+    http_request = request.Request(
+        TELEMETRY_ENDPOINT,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+        },
+        method="POST",
     )
-    normalised.setdefault("operating_mode", "UNKNOWN")
-    normalised.setdefault("degradation_scenario", "NORMAL")
-
-    # Server receipt time is deliberately separate from simulation time.
-    normalised["received_at"] = datetime.now(timezone.utc).isoformat()
-
-    return normalised
-
-
-@app.post("/api/telemetry")
-async def receive_telemetry(payload: dict[str, Any]):
-    """
-    Receive one telemetry packet from the external simulation.
-
-    START is controlled by the simulation. The backend begins its Aeronex
-    processing path when the first valid telemetry packet arrives.
-    """
-    global latest_telemetry, telemetry_started, last_received_at
 
     try:
-        telemetry = _normalise_telemetry(payload)
-    except ValueError as exc:
-        return {"status": "rejected", "error": str(exc)}
+        with request.urlopen(
+            http_request,
+            timeout=2.0,
+        ) as response:
+            response.read()
 
-    latest_telemetry = telemetry
-    telemetry_records.append(dict(telemetry))
-    telemetry_started = True
-    last_received_at = telemetry["received_at"]
+    except error.HTTPError as exc:
+        print(
+            "❌ Aeronex telemetry rejected:",
+            exc.code,
+            exc.read().decode("utf-8", errors="replace"),
+        )
 
-    # Keep a bounded in-memory demo history.
-    if len(telemetry_records) > 10_000:
-        del telemetry_records[:-10_000]
+    except (
+        error.URLError,
+        TimeoutError,
+        OSError,
+    ):
+        pass
+        # The simulation must continue even if the monitoring backend
+        # is temporarily unavailable.
+        pass
 
-    status = build_status()
 
-    disconnected: list[WebSocket] = []
-    for client in websocket_clients:
-        try:
-            await client.send_json(status)
-        except Exception:
-            disconnected.append(client)
+async def send_telemetry_to_aeronex(
+    telemetry: dict[str, Any],
+) -> None:
+    """Send telemetry without blocking the simulation loop."""
 
-    for client in disconnected:
-        websocket_clients.discard(client)
+    await asyncio.to_thread(
+        _post_telemetry_sync,
+        telemetry,
+    )
+
+
+# ---------------------------------------------------------------------------
+# SIMULATION LOOP
+# ---------------------------------------------------------------------------
+
+async def simulation_loop() -> None:
+    """
+    Advance the MissionSimulator using its configured fixed timestep.
+
+    The Simulation Backend owns the simulation clock.
+    """
+
+    try:
+        while mission.running and not mission.complete:
+
+            telemetry = mission.step()
+
+            if telemetry is not None:
+
+                normalised = normalise_telemetry(
+                    telemetry
+                )
+
+                # Send telemetry to the monitoring backend.
+                await send_telemetry_to_aeronex(
+                    normalised
+                )
+
+                # Push fresh state to Simulation UI clients.
+                await broadcast_status()
+
+            await asyncio.sleep(
+                mission.controller.config.fixed_timestep
+            )
+
+        # Always send the final state.
+        await broadcast_status()
+
+    except asyncio.CancelledError:
+        raise
+
+    except Exception as exc:
+        print(
+            "Simulation loop error:",
+            exc,
+        )
+
+    finally:
+        global simulation_task
+        simulation_task = None
+
+
+# ---------------------------------------------------------------------------
+# SIMULATION COMMANDS
+# ---------------------------------------------------------------------------
+
+async def start_simulation() -> dict[str, Any]:
+    """Start or resume the mission."""
+
+    global simulation_task
+
+    async with state_lock:
+
+        if mission.complete:
+            return {
+                "status": "complete",
+                "message": (
+                    "Mission is complete. "
+                    "Reset the simulation before starting again."
+                ),
+            }
+
+        mission.start()
+
+        if (
+            simulation_task is None
+            or simulation_task.done()
+        ):
+            simulation_task = asyncio.create_task(
+                simulation_loop()
+            )
+
+    await broadcast_status()
 
     return {
-        "status": "accepted",
-        "sim_time": telemetry["sim_time"],
-        "records": len(telemetry_records),
-        "health_status": status["digital_twin"]["health_status"],
+        "status": "started",
+        "state": build_status(),
     }
 
 
-@app.post("/api/telemetry/reset")
-def reset_telemetry():
-    """Reset the current external-simulation telemetry session."""
-    global latest_telemetry, telemetry_started, last_received_at
+async def pause_simulation() -> dict[str, Any]:
+    """Pause the mission without resetting it."""
 
-    latest_telemetry = {}
-    telemetry_records.clear()
-    telemetry_started = False
-    last_received_at = None
+    async with state_lock:
+        mission.pause()
 
-    return {"status": "reset"}
+    await broadcast_status()
 
+    return {
+        "status": "paused",
+        "state": build_status(),
+    }
+
+
+async def reset_simulation() -> dict[str, Any]:
+    """Reset the mission to its initial state."""
+
+    global simulation_task
+
+    async with state_lock:
+
+        mission.pause()
+
+        if (
+            simulation_task is not None
+            and not simulation_task.done()
+        ):
+            simulation_task.cancel()
+
+        simulation_task = None
+
+        mission.reset()
+
+    await broadcast_status()
+
+    return {
+        "status": "reset",
+        "state": build_status(),
+    }
+
+
+async def handle_command(
+    message: dict[str, Any],
+) -> dict[str, Any]:
+    """Handle commands received from the Simulation UI."""
+
+    action = str(
+        message.get("action", "")
+    ).lower()
+
+    if action == "start":
+        return await start_simulation()
+
+    if action == "pause":
+        return await pause_simulation()
+
+    if action == "reset":
+        return await reset_simulation()
+
+    if action == "set_controls":
+        try:
+            current_controls = mission.controller.controls
+
+            scenario = message.get(
+                "degradation_scenario",
+                current_controls.degradation_scenario.value,
+            )
+
+            enabled = message.get(
+                "degradation_enabled",
+                current_controls.degradation_enabled,
+            )
+
+            severity = message.get(
+                "degradation_severity",
+                current_controls.degradation_severity,
+            )
+
+            mission.set_manual_degradation(
+                scenario,
+                enabled=bool(enabled),
+                severity=float(severity),
+            )
+
+            await broadcast_status()
+
+            return {
+                "status": "controls_updated",
+                "state": build_status(),
+            }
+
+        except (
+            ValueError,
+            TypeError,
+        ) as exc:
+            return {
+                "status": "error",
+                "message": (
+                    f"Invalid degradation controls: {exc}"
+                ),
+                "state": build_status(),
+            }
+
+    if action == "ping":
+        return {
+            "status": "pong",
+            "state": build_status(),
+        }
+
+    return {
+        "status": "ignored",
+        "message": (
+            f"Unknown simulation action: {action}"
+        ),
+        "state": build_status(),
+    }
+
+# ---------------------------------------------------------------------------
+# HTTP ENDPOINTS
+# ---------------------------------------------------------------------------
+
+@app.get("/")
+def root() -> dict[str, Any]:
+    return {
+        "project": "Aeronex",
+        "component": "Simulation Backend",
+        "status": "online",
+        "mission_running": mission.running,
+        "mission_complete": mission.complete,
+    }
+
+
+@app.get("/status")
+def status() -> dict[str, Any]:
+    return build_status()
+
+
+@app.post("/api/start")
+async def http_start() -> dict[str, Any]:
+    return await start_simulation()
+
+
+@app.post("/api/pause")
+async def http_pause() -> dict[str, Any]:
+    return await pause_simulation()
+
+
+@app.post("/api/reset")
+async def http_reset() -> dict[str, Any]:
+    return await reset_simulation()
+
+
+# ---------------------------------------------------------------------------
+# WEBSOCKET
+# ---------------------------------------------------------------------------
 
 @app.websocket("/ws/simulation")
-async def simulation_websocket(websocket: WebSocket):
+async def simulation_websocket(
+    websocket: WebSocket,
+) -> None:
     """
-    Dashboard subscription endpoint.
+    WebSocket used by the Simulation UI.
 
-    The frontend may connect here to receive live backend state. This endpoint
-    intentionally does not start, pause, reset, or control the simulator.
+    Commands:
+        {"action": "start"}
+        {"action": "pause"}
+        {"action": "reset"}
+        {"action": "ping"}
+
+    The backend also continuously pushes simulation state.
     """
+
     await websocket.accept()
-    websocket_clients.add(websocket)
+
+    simulation_clients.add(
+        websocket
+    )
 
     try:
-        # Immediately provide current state.
-        await websocket.send_json(build_status())
+
+        # Immediately send current state.
+        await websocket.send_json(
+            build_status()
+        )
 
         while True:
-            try:
-                message = await asyncio.wait_for(
-                    websocket.receive_json(),
-                    timeout=15.0,
-                )
 
-                # Keep only a harmless dashboard ping protocol.
-                if message.get("action") == "ping":
-                    await websocket.send_json(
-                        {"type": "pong", "status": build_status()}
-                    )
+            message = await websocket.receive_json()
 
-            except asyncio.TimeoutError:
-                # Periodic state refresh; telemetry itself is pushed immediately
-                # by /api/telemetry when a packet arrives.
-                await websocket.send_json(build_status())
+            if not isinstance(message, dict):
+                continue
+
+            response = await handle_command(
+                message
+            )
+
+            await websocket.send_json(
+                response
+            )
 
     except WebSocketDisconnect:
-        websocket_clients.discard(websocket)
-        print("Frontend disconnected")
+
+        simulation_clients.discard(
+            websocket
+        )
+
+        print(
+            "Simulation UI disconnected"
+        )
 
     except Exception as exc:
-        websocket_clients.discard(websocket)
-        print("WebSocket error:", exc)
+
+        simulation_clients.discard(
+            websocket
+        )
+
+        print(
+            "Simulation WebSocket error:",
+            exc,
+        )
+
+
+# ---------------------------------------------------------------------------
+# DEVELOPMENT ENTRY POINT
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "server:app",
+        host=HOST,
+        port=PORT,
+        reload=False,
+    )

@@ -82,7 +82,7 @@ def mission_snapshot(db: Session) -> dict[str, Any]:
             "mission_name": "MALE UAV Engine Reliability Mission",
             "phase": None,
             "phase_index": None,
-            "total_phases": 3,
+            "total_phases": 9,
             "progress": None,
             "altitude": None,
             "throttle": None,
@@ -91,23 +91,36 @@ def mission_snapshot(db: Session) -> dict[str, Any]:
             "mission_reliability": unavailable_reliability(),
         }
 
-    # Representative mission phases for the simulator:
-    # 1 = IDLE/START
-    # 2 = HIGH LOAD/TAKEOFF
-    # 3 = CRUISE/CLIMB
+    # Must match the 9-phase Simulation MissionProfile.
     phase_map = {
         "IDLE": 0,
         "START": 0,
+
         "HIGH_LOAD": 1,
         "TAKEOFF": 1,
-        "CRUISE": 2,
+
         "CLIMB": 2,
+        "CRUISE": 3,
+
+        "HIGH-ALTITUDE CRUISE": 4,
+        "ENVIRONMENT CHANGE": 5,
+
+        "OPTIONAL DEGRADATION EVENT": 6,
+
+        "RETURN / LOWER LOAD": 7,
+
+        "MISSION COMPLETE": 8,
+        "COMPLETE": 8,
     }
 
-    phase_index = phase_map.get(state.phase)
+    phase_index = phase_map.get(
+        str(state.phase).upper()
+    )
+
+    total_phases = 9
 
     progress = (
-        ((phase_index + 1) / 3) * 100
+        ((phase_index + 1) / total_phases) * 100
         if phase_index is not None
         else None
     )
@@ -116,7 +129,7 @@ def mission_snapshot(db: Session) -> dict[str, Any]:
         "mission_name": state.mission_name,
         "phase": state.phase,
         "phase_index": phase_index,
-        "total_phases": 3,
+        "total_phases": total_phases,
         "progress": progress,
         "altitude": state.altitude,
         "throttle": state.throttle,

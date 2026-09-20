@@ -1,119 +1,192 @@
 {
-  "data_source": "real_project_provided_dataset",
-  "dataset": "aeronex_engine_telemetry.csv",
-  "validation": {
-    "status": "GOOD",
-    "rows": 30000,
-    "missing_ratio": 0.0,
-    "timestamp_valid": true,
-    "duplicates": 0,
-    "invalid_numeric": 0,
-    "range_violations": {},
-    "constant_sensors": [],
-    "sampling_interval_seconds": 10.0,
-    "sensor_anomalies": []
-  },
-  "split": {
-    "strategy": "engine-held-out chronological-by-engine",
-    "train_engines": [
-      "ENG-001",
-      "ENG-004",
-      "ENG-006",
-      "ENG-007",
-      "ENG-008",
-      "ENG-010",
-      "ENG-011",
-      "ENG-012",
-      "ENG-013",
-      "ENG-015",
-      "ENG-016",
-      "ENG-017",
-      "ENG-019",
-      "ENG-020"
-    ],
-    "validation_engines": [
-      "ENG-003",
-      "ENG-005",
-      "ENG-018"
-    ],
-    "test_engines": [
-      "ENG-002",
-      "ENG-009",
-      "ENG-014"
-    ]
-  },
+  "model": "fault",
+  "algorithm": "ExtraTreesClassifier",
   "features": [
-    "load_fraction",
-    "ambient_temperature_c",
     "rpm",
-    "oil_temperature_c",
-    "coolant_temperature_c",
-    "oil_pressure_bar",
-    "manifold_pressure_bar",
-    "fuel_flow_kg_h",
-    "vibration_rms",
-    "exhaust_temperature_c",
-    "load_fraction_delta",
-    "load_fraction_rate",
-    "load_fraction_roll_mean",
-    "load_fraction_roll_std",
-    "ambient_temperature_c_delta",
-    "ambient_temperature_c_rate",
-    "ambient_temperature_c_roll_mean",
-    "ambient_temperature_c_roll_std",
-    "rpm_delta",
-    "rpm_rate",
-    "rpm_roll_mean",
-    "rpm_roll_std",
-    "oil_temperature_c_delta",
-    "oil_temperature_c_rate",
-    "oil_temperature_c_roll_mean",
-    "oil_temperature_c_roll_std",
-    "coolant_temperature_c_delta",
-    "coolant_temperature_c_rate",
-    "coolant_temperature_c_roll_mean",
-    "coolant_temperature_c_roll_std",
-    "oil_pressure_bar_delta",
-    "oil_pressure_bar_rate",
-    "oil_pressure_bar_roll_mean",
-    "oil_pressure_bar_roll_std",
-    "manifold_pressure_bar_delta",
-    "manifold_pressure_bar_rate",
-    "manifold_pressure_bar_roll_mean",
-    "manifold_pressure_bar_roll_std",
-    "fuel_flow_kg_h_delta",
-    "fuel_flow_kg_h_rate",
-    "fuel_flow_kg_h_roll_mean",
-    "fuel_flow_kg_h_roll_std",
-    "vibration_rms_delta",
-    "vibration_rms_rate",
-    "vibration_rms_roll_mean",
-    "vibration_rms_roll_std",
-    "exhaust_temperature_c_delta",
-    "exhaust_temperature_c_rate",
-    "exhaust_temperature_c_roll_mean",
-    "exhaust_temperature_c_roll_std",
-    "coolant_oil_temp_delta_c",
-    "rpm_per_load",
-    "fuel_flow_per_load",
-    "vibration_per_krpm",
-    "seconds_since_start",
-    "mission_phase_code"
+    "cht",
+    "egt",
+    "oil_temperature",
+    "oil_pressure",
+    "fuel_flow",
+    "vibration",
+    "throttle",
+    "altitude",
+    "ambient_temperature"
   ],
-  "version": "0.1.0",
-  "model_name": "fault",
-  "model_type": "CalibratedRandomForestClassifier",
-  "classes": [
-    "bearing_degradation",
-    "fuel_system_fault",
-    "lubrication_fault",
-    "normal",
-    "overheating"
-  ],
-  "test_metrics": {
-    "accuracy": 0.9997777777777778,
-    "precision_macro": 0.9999131039277024,
-    "recall_macro": 0.9992877492877493,
-    "f1_macro": 0.9996000400610582
+  "validation": {
+    "accuracy": 0.9934959349593496,
+    "precision_macro": 0.9834611204833633,
+    "recall_macro": 0.9967059558931473,
+    "f1_macro": 0.9897933784149988,
+    "confusion_matrix": [
+      [
+        274,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        310,
+        0,
+        0,
+        0
+      ],
+      [
+        20,
+        1,
+        2694,
+        0,
+        1
+      ],
+      [
+        0,
+        0,
+        0,
+        195,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        193
+      ]
+    ],
+    "classification_report": {
+      "cooling": {
+        "precision": 0.9256756756756757,
+        "recall": 1.0,
+        "f1-score": 0.9614035087719298,
+        "support": 274.0
+      },
+      "lubrication": {
+        "precision": 0.9967845659163987,
+        "recall": 0.9967845659163987,
+        "f1-score": 0.9967845659163987,
+        "support": 311.0
+      },
+      "normal": {
+        "precision": 1.0,
+        "recall": 0.991899852724595,
+        "f1-score": 0.9959334565619223,
+        "support": 2716.0
+      },
+      "sensor_drift": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 195.0
+      },
+      "vibration": {
+        "precision": 0.9948453608247423,
+        "recall": 0.9948453608247423,
+        "f1-score": 0.9948453608247423,
+        "support": 194.0
+      },
+      "accuracy": 0.9934959349593496,
+      "macro avg": {
+        "precision": 0.9834611204833633,
+        "recall": 0.9967059558931473,
+        "f1-score": 0.9897933784149988,
+        "support": 3690.0
+      },
+      "weighted avg": {
+        "precision": 0.9939390610122317,
+        "recall": 0.9934959349593496,
+        "f1-score": 0.9935988697630594,
+        "support": 3690.0
+      }
+    }
+  },
+  "test": {
+    "accuracy": 0.9926829268292683,
+    "precision_macro": 0.9792932160090831,
+    "recall_macro": 0.9950699117985978,
+    "f1_macro": 0.9866837229357006,
+    "confusion_matrix": [
+      [
+        235,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        3,
+        233,
+        0,
+        0,
+        0
+      ],
+      [
+        21,
+        0,
+        2770,
+        0,
+        2
+      ],
+      [
+        0,
+        0,
+        0,
+        156,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        269
+      ]
+    ],
+    "classification_report": {
+      "cooling": {
+        "precision": 0.9038461538461539,
+        "recall": 1.0,
+        "f1-score": 0.9494949494949495,
+        "support": 235.0
+      },
+      "lubrication": {
+        "precision": 1.0,
+        "recall": 0.9872881355932204,
+        "f1-score": 0.9936034115138592,
+        "support": 236.0
+      },
+      "normal": {
+        "precision": 1.0,
+        "recall": 0.991765127103473,
+        "f1-score": 0.9958655401761639,
+        "support": 2793.0
+      },
+      "sensor_drift": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 156.0
+      },
+      "vibration": {
+        "precision": 0.992619926199262,
+        "recall": 0.9962962962962963,
+        "f1-score": 0.9944547134935305,
+        "support": 270.0
+      },
+      "accuracy": 0.9926829268292683,
+      "macro avg": {
+        "precision": 0.9792932160090831,
+        "recall": 0.9950699117985978,
+        "f1-score": 0.9866837229357006,
+        "support": 3690.0
+      },
+      "weighted avg": {
+        "precision": 0.993336375671449,
+        "recall": 0.9926829268292683,
+        "f1-score": 0.9928392803804507,
+        "support": 3690.0
+      }
+    }
   }
 }

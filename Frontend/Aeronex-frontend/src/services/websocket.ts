@@ -149,7 +149,7 @@ const getWebSocketUrl = (): string => {
   const protocol =
     window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 
-  return `${protocol}//${window.location.hostname}:8000/ws/simulation`;
+  return `${protocol}//${window.location.hostname}:8001/ws/simulation`;
 };
 
 export class AeronexWebSocket {
@@ -203,8 +203,8 @@ export class AeronexWebSocket {
           JSON.parse(event.data) as AeronexSnapshot;
 
         console.log(
-          '📡 Aeronex snapshot received:',
-          snapshot
+         '📡 Aeronex snapshot received:',
+         JSON.stringify(snapshot, null, 2)
         );
 
         this.onSnapshot(snapshot);

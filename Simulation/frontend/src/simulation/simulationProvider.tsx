@@ -1,12 +1,29 @@
 /**
- * Aeronex Digital Twin - Simulation Provider Layer
- * Provides clean React context abstraction.
- * Currently backed by MockSimulationProvider; can be swapped seamlessly
- * with Python WebSocket / FastAPI connection in future integration phases.
+ * Aeronex Digital Twin - Simulation Provider
+ *
+ * The Python Simulation Backend is the single source of truth.
+ *
+ * Flow:
+ * React Simulation UI
+ *        ↓ WebSocket commands
+ * Python Simulation Backend
+ *        ↓
+ * MissionSimulator
+ *        ↓
+ * Engine / Controller
+ *        ↓
+ * Real telemetry
  */
 
-import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
-import { MockEngineSimulator, MISSION_PHASES } from './mockSimulation';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+} from 'react';
+
 import {
   DegradationScenario,
   EventLogEntry,
@@ -19,577 +36,1266 @@ import {
   TelemetryHistoryPoint,
 } from './types';
 
+
+// ---------------------------------------------------------------------------
+// TYPES
+// ---------------------------------------------------------------------------
+
 interface SimulationContextValue {
-  // Telemetry & Health
   telemetry: TelemetryData;
   health: HealthReport;
   history: TelemetryHistoryPoint[];
 
-  // Simulation execution status
   simulationState: SimulationState;
-  connectionMode: 'MOCK_ENGINE' | 'PYTHON_WEBSOCKET';
+  connectionMode: 'PYTHON_WEBSOCKET';
 
-  // Mission State
   currentPhase: MissionPhaseDef;
   currentPhaseIndex: number;
   allPhases: MissionPhaseDef[];
   missionSummary: MissionSummaryStats;
 
-  // Events
   eventLog: EventLogEntry[];
   clearEventLog: () => void;
 
-  // Controls
   controls: SimulationControlsState;
-  updateControls: (partial: Partial<SimulationControlsState>) => void;
+  updateControls: (
+    partial: Partial<SimulationControlsState>
+  ) => void;
+
   startSimulation: () => void;
   pauseSimulation: () => void;
   resetSimulation: () => void;
+
   jumpToPhase: (phaseIndex: number) => void;
 }
 
+
+// ---------------------------------------------------------------------------
+// MISSION PHASES
+//
+// These names match the Python default mission profile.
+// The Python backend remains authoritative for the actual phase.
+// ---------------------------------------------------------------------------
+
+
+const MISSION_PHASES: MissionPhaseDef[] = [
+  {
+    id: 1,
+    name: 'START / IDLE',
+    shortCode: 'START',
+    description: 'Engine start and idle stabilization.',
+    targetThrottle: 0,
+    targetAltitude: 0,
+    nominalDuration: 5,
+  },
+  {
+    id: 2,
+    name: 'TAKEOFF / HIGH LOAD',
+    shortCode: 'TAKEOFF',
+    description: 'High-load takeoff phase.',
+    targetThrottle: 85,
+    targetAltitude: 300,
+    nominalDuration: 5,
+  },
+  {
+    id: 3,
+    name: 'CLIMB',
+    shortCode: 'CLIMB',
+    description: 'Climb to mission operating altitude.',
+    targetThrottle: 75,
+    targetAltitude: 3000,
+    nominalDuration: 8,
+  },
+  {
+    id: 4,
+    name: 'CRUISE',
+    shortCode: 'CRUISE',
+    description: 'Stable cruise operation.',
+    targetThrottle: 55,
+    targetAltitude: 3000,
+    nominalDuration: 10,
+  },
+  {
+    id: 5,
+    name: 'HIGH-ALTITUDE CRUISE',
+    shortCode: 'HIGH ALT',
+    description: 'High-altitude cruise segment.',
+    targetThrottle: 55,
+    targetAltitude: 6500,
+    nominalDuration: 8,
+  },
+  {
+    id: 6,
+    name: 'ENVIRONMENT CHANGE',
+    shortCode: 'ENV CHANGE',
+    description: 'Mission environment conditions change.',
+    targetThrottle: 60,
+    targetAltitude: 6500,
+    nominalDuration: 5,
+  },
+  {
+    id: 7,
+    name: 'OPTIONAL DEGRADATION EVENT',
+    shortCode: 'DEGRADATION',
+    description: 'Representative degradation event.',
+    targetThrottle: 60,
+    targetAltitude: 6500,
+    nominalDuration: 8,
+  },
+  {
+    id: 8,
+    name: 'RETURN / LOWER LOAD',
+    shortCode: 'RETURN',
+    description: 'Return segment with reduced engine load.',
+    targetThrottle: 30,
+    targetAltitude: 1000,
+    nominalDuration: 8,
+  },
+  {
+    id: 9,
+    name: 'MISSION COMPLETE',
+    shortCode: 'COMPLETE',
+    description: 'Mission completion and engine shutdown.',
+    targetThrottle: 0,
+    targetAltitude: 0,
+    nominalDuration: 4,
+  },
+];
+
+// ---------------------------------------------------------------------------
+// DEFAULT CONTROLS
+// ---------------------------------------------------------------------------
+
 const defaultControls: SimulationControlsState = {
-  throttle: 65,
-  altitude: 4500,
-  ambient_temperature: 15,
+  throttle: 0,
+  altitude: 0,
+  ambient_temperature: 20,
   degradation_scenario: 'NORMAL',
   degradation_severity: 0,
   degradation_enabled: false,
+
   auto_progress_mission: true,
   sim_speed: 1,
 };
 
+
+// ---------------------------------------------------------------------------
+// EMPTY / COLD-START TELEMETRY
+//
+// IMPORTANT:
+// These are NOT fake engine readings.
+// They represent "no mission telemetry yet".
+// ---------------------------------------------------------------------------
+
 const initialTelemetry: TelemetryData = {
-  timestamp: Date.now(),
-  throttle: 65,
-  operating_mode: 'CRUISE',
-  rpm: 4950,
-  cht: 112.5,
-  egt: 785.0,
-  oil_temperature: 92.0,
-  oil_pressure: 4.2,
-  fuel_flow: 21.5,
-  vibration: 1.65,
-  engine_load: 65,
-  available_performance: 98,
-  altitude: 4500,
-  ambient_temperature: 15,
+  timestamp: 0,
+
+  throttle: 0,
+  operating_mode: 'IDLE',
+
+  rpm: 0,
+  cht: 0,
+  egt: 0,
+
+  oil_temperature: 0,
+  oil_pressure: 0,
+
+  fuel_flow: 0,
+  vibration: 0,
+
+  engine_load: 0,
+  available_performance: 0,
+
+  altitude: 0,
+  ambient_temperature: 20,
+
   mission_elapsed_time: 0,
+
   degradation_scenario: 'NORMAL',
   degradation_enabled: false,
   degradation_severity: 0,
 };
 
+
+// ---------------------------------------------------------------------------
+// INITIAL HEALTH
+// ---------------------------------------------------------------------------
+
 const initialHealth: HealthReport = {
   status: 'NORMAL',
-  health_index: 96,
-  operating_mode: 'CRUISE',
-  degradation_summary: 'NONE',
+  health_index: 0,
+  operating_mode: 'IDLE',
+
+  degradation_summary: 'NO TELEMETRY',
+
   active_warnings: [],
   active_criticals: [],
 };
 
+
+// ---------------------------------------------------------------------------
+// INITIAL SUMMARY
+// ---------------------------------------------------------------------------
+
 const initialSummary: MissionSummaryStats = {
   missionDuration: 0,
   phasesCompleted: 0,
-  minRpm: 1500,
-  maxRpm: 4950,
-  maxCht: 112.5,
-  maxEgt: 785.0,
-  minOilPressure: 4.2,
-  maxVibration: 1.65,
+
+  minRpm: 0,
+  maxRpm: 0,
+
+  maxCht: 0,
+  maxEgt: 0,
+
+  minOilPressure: 0,
+  maxVibration: 0,
+
   maxDegradationSeverity: 0,
+
   warningEvents: 0,
   criticalEvents: 0,
-  finalHealth: 96,
+
+  finalHealth: 0,
   finalStatus: 'NORMAL',
 };
 
-const SimulationContext = createContext<SimulationContextValue | null>(null);
 
-export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const connectionMode: 'MOCK_ENGINE' | 'PYTHON_WEBSOCKET' = 'PYTHON_WEBSOCKET'; // Change to 'MOCK_ENGINE' for local simulation
+// ---------------------------------------------------------------------------
+// CONTEXT
+// ---------------------------------------------------------------------------
+
+const SimulationContext =
+  createContext<SimulationContextValue | null>(null);
+
+
+// ---------------------------------------------------------------------------
+// PROVIDER
+// ---------------------------------------------------------------------------
+
+export const SimulationProvider: React.FC<{
+  children: React.ReactNode;
+}> = ({ children }) => {
+
   const socketRef = useRef<WebSocket | null>(null);
-  const [simulationState, setSimulationState] = useState<SimulationState>('RUNNING');
-  const [controls, setControls] = useState<SimulationControlsState>(defaultControls);
-  const [telemetry, setTelemetry] = useState<TelemetryData>(initialTelemetry);
-  const [health, setHealth] = useState<HealthReport>(initialHealth);
-  const [history, setHistory] = useState<TelemetryHistoryPoint[]>([]);
-  const [eventLog, setEventLog] = useState<EventLogEntry[]>([]);
-  const [currentPhaseIndex, setCurrentPhaseIndex] = useState<number>(0);
-  const [missionSummary, setMissionSummary] = useState<MissionSummaryStats>(initialSummary);
 
-  const simulatorRef = useRef<MockEngineSimulator>(new MockEngineSimulator());
-  const controlsRef = useRef<SimulationControlsState>(controls);
-  controlsRef.current = controls;
+  const [simulationState, setSimulationState] =
+    useState<SimulationState>('PAUSED');
 
-  const simStateRef = useRef<SimulationState>(simulationState);
-  simStateRef.current = simulationState;
+  const [controls, setControls] =
+    useState<SimulationControlsState>(
+      defaultControls
+    );
 
-  const sendPythonCommand = (message: object) => {
-  if (socketRef.current?.readyState === WebSocket.OPEN) {
-    socketRef.current.send(JSON.stringify(message));
-  } else {
-    console.warn("⚠️ Python WebSocket is not connected");
-  }
-};
+  const [telemetry, setTelemetry] =
+    useState<TelemetryData>(
+      initialTelemetry
+    );
 
-  const addTelemetryToHistory = (currentTelemetry: TelemetryData) => {
-  const minutes = Math.floor(currentTelemetry.mission_elapsed_time / 60);
-  const seconds = Math.floor(currentTelemetry.mission_elapsed_time % 60);
+  const [health, setHealth] =
+    useState<HealthReport>(
+      initialHealth
+    );
 
-  const timeStr =
-    `${minutes.toString().padStart(2, '0')}:` +
-    `${seconds.toString().padStart(2, '0')}`;
+  const [history, setHistory] =
+    useState<TelemetryHistoryPoint[]>([]);
 
-  setHistory((prev) => {
-    const point: TelemetryHistoryPoint = {
-      time: timeStr,
-      met: currentTelemetry.mission_elapsed_time,
-      rpm: currentTelemetry.rpm,
-      throttle: currentTelemetry.throttle,
-      cht: currentTelemetry.cht,
-      egt: currentTelemetry.egt,
-      oil_temperature: currentTelemetry.oil_temperature,
-      oil_pressure: currentTelemetry.oil_pressure,
-      vibration: currentTelemetry.vibration,
-      fuel_flow: currentTelemetry.fuel_flow,
-      altitude: currentTelemetry.altitude,
-    };
+  const [eventLog, setEventLog] =
+    useState<EventLogEntry[]>([]);
 
-    const next = [...prev, point];
+  const [currentPhaseIndex, setCurrentPhaseIndex] =
+    useState<number>(0);
 
-    return next.length > 40
-      ? next.slice(next.length - 40)
-      : next;
-  });
-};
-  
-  const connectToPython = () => {
-  const socket = new WebSocket(
-    "ws://localhost:8000/ws/simulation"
+  const [missionSummary, setMissionSummary] =
+    useState<MissionSummaryStats>(
+      initialSummary
+    );
+
+
+  // -------------------------------------------------------------------------
+  // EVENT LOGGER
+  // -------------------------------------------------------------------------
+
+  const addEvent = useCallback(
+    (
+      event: Omit<EventLogEntry, 'id'>
+    ) => {
+
+      const newEntry: EventLogEntry = {
+        ...event,
+        id:
+          `${Date.now()}-` +
+          `${Math.random()
+            .toString(36)
+            .slice(2, 8)}`,
+      };
+
+      setEventLog(
+        prev =>
+          [newEntry, ...prev].slice(0, 100)
+      );
+
+      setMissionSummary(prev => ({
+        ...prev,
+
+        warningEvents:
+          event.level === 'WARNING'
+            ? prev.warningEvents + 1
+            : prev.warningEvents,
+
+        criticalEvents:
+          event.level === 'CRITICAL'
+            ? prev.criticalEvents + 1
+            : prev.criticalEvents,
+      }));
+    },
+    []
   );
 
-  socketRef.current = socket;
 
-  socket.onopen = () => {
-    console.log("🟢 Connected to Aeronex Python backend");
-  };
+  // -------------------------------------------------------------------------
+  // SEND COMMAND TO PYTHON
+  // -------------------------------------------------------------------------
 
-  socket.onmessage = (event) => {
-    const data = JSON.parse(event.data);
+  const sendPythonCommand = useCallback(
+    (message: object) => {
 
-    console.log("📡 PYTHON TELEMETRY:", JSON.stringify(data, null, 2));
-    
-    if (typeof data.mission?.current_phase_index === 'number') {
-  setCurrentPhaseIndex(data.mission.current_phase_index);
-}
-    const pythonTelemetry = data.latest_telemetry;
-    if(!pythonTelemetry) return;
-    // Python → React telemetry mapping
-  const mappedTelemetry: TelemetryData = {
-    timestamp: pythonTelemetry.timestamp,
-    throttle: pythonTelemetry.throttle * 100,
-    operating_mode:
-      pythonTelemetry.operating_mode,
-    rpm: pythonTelemetry.rpm,
-    cht: pythonTelemetry.cht,
-    egt: pythonTelemetry.egt,
-    oil_temperature: pythonTelemetry.oil_temperature,
-    oil_pressure: pythonTelemetry.oil_pressure,
-    fuel_flow: pythonTelemetry.fuel_flow,
-    vibration: pythonTelemetry.vibration,
-    engine_load: pythonTelemetry.engine_load,
-    available_performance:
-      pythonTelemetry.available_performance * 100,
-    altitude: pythonTelemetry.altitude,
-    ambient_temperature: pythonTelemetry.ambient_temperature,
-    mission_elapsed_time:
-      pythonTelemetry.mission_elapsed_time,
-    degradation_scenario:
-      pythonTelemetry.degradation_scenario,
-    degradation_enabled:
-      pythonTelemetry.degradation_enabled,
-    degradation_severity:
-      pythonTelemetry.degradation_severity,
-  };
+      if (
+        socketRef.current?.readyState ===
+        WebSocket.OPEN
+      ) {
 
-  setTelemetry(mappedTelemetry);
-  setSimulationState(
-  data.running ? 'RUNNING' : 'PAUSED'
-);
+        socketRef.current.send(
+          JSON.stringify(message)
+        );
 
-setControls({
-  throttle: mappedTelemetry.throttle,
-  altitude: mappedTelemetry.altitude,
-  ambient_temperature: mappedTelemetry.ambient_temperature,
+        return true;
+      }
 
-  degradation_scenario:
-    data.controls?.degradation_scenario ??
-    mappedTelemetry.degradation_scenario,
+      console.warn(
+        '⚠️ Simulation WebSocket is not connected'
+      );
 
-  degradation_severity:
-    data.controls?.degradation_severity ??
-    mappedTelemetry.degradation_severity,
+      return false;
+    },
+    []
+  );
 
-  degradation_enabled:
-    data.controls?.degradation_enabled ??
-    mappedTelemetry.degradation_enabled,
 
-  auto_progress_mission: true,
-  sim_speed: 1,
-});
+  // -------------------------------------------------------------------------
+  // TELEMETRY HISTORY
+  // -------------------------------------------------------------------------
 
-addTelemetryToHistory(mappedTelemetry);
+  const addTelemetryToHistory = useCallback(
+    (
+      currentTelemetry: TelemetryData
+    ) => {
 
-  // Digital Twin health
-  const twin = data.digital_twin;
+      const minutes =
+        Math.floor(
+          currentTelemetry
+            .mission_elapsed_time / 60
+        );
 
-  if (twin) {
-    setHealth({
-      status: twin.health_status,
-      health_index:
-        twin.health_status === 'NORMAL'
-          ? 100
-          : twin.health_status === 'WARNING'
-            ? 70
-            : 30,
-      operating_mode:
-        twin.operating_mode,
-      degradation_summary:
-        twin.degradation.enabled
-          ? `${twin.degradation.scenario} — severity ${(
-              twin.degradation.severity * 100
-            ).toFixed(0)}%`
-          : 'NONE',
-      active_warnings:
-        twin.health_status === 'WARNING'
-          ? ['Engine health warning detected']
-          : [],
-      active_criticals:
-        twin.health_status === 'CRITICAL'
-          ? ['Critical engine health condition detected']
-          : [],
-    });
-  }
-  if (twin) {
-  setMissionSummary((prev) => ({
-    ...prev,
-    missionDuration:
-      mappedTelemetry.mission_elapsed_time,
-    minRpm: Math.min(
-      prev.minRpm,
-      mappedTelemetry.rpm
-    ),
-    maxRpm: Math.max(
-      prev.maxRpm,
-      mappedTelemetry.rpm
-    ),
-    maxCht: Math.max(
-      prev.maxCht,
-      mappedTelemetry.cht
-    ),
-    maxEgt: Math.max(
-      prev.maxEgt,
-      mappedTelemetry.egt
-    ),
-    minOilPressure: Math.min(
-      prev.minOilPressure,
-      mappedTelemetry.oil_pressure
-    ),
-    maxVibration: Math.max(
-      prev.maxVibration,
-      mappedTelemetry.vibration
-    ),
-    maxDegradationSeverity:
-      mappedTelemetry.degradation_enabled
-        ? Math.max(
-            prev.maxDegradationSeverity,
-            mappedTelemetry.degradation_severity
-          )
-        : prev.maxDegradationSeverity,
-    finalStatus: twin.health_status,
-  }));
-}
-  };
+      const seconds =
+        Math.floor(
+          currentTelemetry
+            .mission_elapsed_time % 60
+        );
 
-  socket.onerror = (error) => {
-    console.error("🔴 WebSocket error:", error);
-  };
+      const timeStr =
+        `${minutes
+          .toString()
+          .padStart(2, '0')}:` +
+        `${seconds
+          .toString()
+          .padStart(2, '0')}`;
 
-  socket.onclose = () => {
-    console.log("🟡 Disconnected from Aeronex backend");
-  };
-};
+      const point: TelemetryHistoryPoint = {
+        time: timeStr,
 
-useEffect(() => {
-  connectToPython();
+        met:
+          currentTelemetry
+            .mission_elapsed_time,
 
-  return () => {
-    socketRef.current?.close();
-  };
-}, []);
+        rpm:
+          currentTelemetry.rpm,
 
-  // Add event helper
-  const addEvent = useCallback((event: Omit<EventLogEntry, 'id'>) => {
-    const newEntry: EventLogEntry = {
-      ...event,
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        throttle:
+          currentTelemetry.throttle,
+
+        cht:
+          currentTelemetry.cht,
+
+        egt:
+          currentTelemetry.egt,
+
+        oil_temperature:
+          currentTelemetry.oil_temperature,
+
+        oil_pressure:
+          currentTelemetry.oil_pressure,
+
+        vibration:
+          currentTelemetry.vibration,
+
+        fuel_flow:
+          currentTelemetry.fuel_flow,
+
+        altitude:
+          currentTelemetry.altitude,
+      };
+
+      setHistory(prev => {
+
+        const next = [
+          ...prev,
+          point,
+        ];
+
+        return next.length > 40
+          ? next.slice(next.length - 40)
+          : next;
+      });
+    },
+    []
+  );
+
+
+  // -------------------------------------------------------------------------
+  // PYTHON WEBSOCKET
+  // -------------------------------------------------------------------------
+
+  const connectToPython = useCallback(() => {
+
+    const socket =
+      new WebSocket(
+        'ws://localhost:8000/ws/simulation'
+      );
+
+    socketRef.current = socket;
+
+
+    socket.onopen = () => {
+
+      console.log(
+        '🟢 Connected to Simulation Backend'
+      );
     };
-    setEventLog((prev) => [newEntry, ...prev].slice(0, 100)); // keep last 100 entries
 
-    // Update mission summary event counts
-    setMissionSummary((prev) => ({
-      ...prev,
-      warningEvents: event.level === 'WARNING' ? prev.warningEvents + 1 : prev.warningEvents,
-      criticalEvents: event.level === 'CRITICAL' ? prev.criticalEvents + 1 : prev.criticalEvents,
-    }));
-  }, []);
 
-  // Update controls
+    socket.onmessage = event => {
+
+      try {
+
+        const data =
+          JSON.parse(event.data);
+
+
+        console.log(
+          '📡 SIMULATION STATUS:',
+          data
+        );
+
+
+        // ---------------------------------------------------------------
+        // MISSION STATE
+        // ---------------------------------------------------------------
+
+        if (
+          typeof
+            data.mission
+              ?.current_phase_index ===
+          'number'
+        ) {
+
+          setCurrentPhaseIndex(
+            data.mission
+              .current_phase_index
+          );
+        }
+
+
+        // ---------------------------------------------------------------
+        // RUNNING / PAUSED / COMPLETE
+        // ---------------------------------------------------------------
+
+        if (data.complete) {
+
+          setSimulationState(
+            'PAUSED'
+          );
+
+        } else if (data.running) {
+
+          setSimulationState(
+            'RUNNING'
+          );
+
+        } else {
+
+          setSimulationState(
+            'PAUSED'
+          );
+        }
+
+
+        // ---------------------------------------------------------------
+        // CONTROLS
+        // ---------------------------------------------------------------
+
+        if (data.controls) {
+
+          setControls({
+            throttle:
+              Number(
+                data.controls
+                  .throttle ?? 0
+              ) * 100,
+
+            altitude:
+              Number(
+                data.controls
+                  .altitude ?? 0
+              ),
+
+            ambient_temperature:
+              Number(
+                data.controls
+                  .ambient_temperature ?? 20
+              ),
+
+            degradation_scenario:
+              data.controls
+                .degradation_scenario ??
+              'NORMAL',
+
+            degradation_severity:
+              Number(
+                data.controls
+                  .degradation_severity ?? 0
+              ),
+
+            degradation_enabled:
+              Boolean(
+                data.controls
+                  .degradation_enabled
+              ),
+
+            auto_progress_mission:
+              true,
+
+            sim_speed: 1,
+          });
+        }
+
+
+        // ---------------------------------------------------------------
+        // NO TELEMETRY YET
+        // ---------------------------------------------------------------
+
+        const pythonTelemetry =
+          data.latest_telemetry;
+
+        if (!pythonTelemetry) {
+
+          return;
+        }
+
+
+        // ---------------------------------------------------------------
+        // PYTHON → REACT TELEMETRY
+        // ---------------------------------------------------------------
+
+        const mappedTelemetry:
+          TelemetryData = {
+
+          timestamp:
+            Number(
+              pythonTelemetry
+                .timestamp ?? 0
+            ),
+
+          throttle:
+            Number(
+              pythonTelemetry
+                .throttle ?? 0
+            ) * 100,
+
+          operating_mode:
+            pythonTelemetry
+              .operating_mode ??
+            'IDLE',
+
+          rpm:
+            Number(
+              pythonTelemetry
+                .rpm ?? 0
+            ),
+
+          cht:
+            Number(
+              pythonTelemetry
+                .cht ?? 0
+            ),
+
+          egt:
+            Number(
+              pythonTelemetry
+                .egt ?? 0
+            ),
+
+          oil_temperature:
+            Number(
+              pythonTelemetry
+                .oil_temperature ?? 0
+            ),
+
+          oil_pressure:
+            Number(
+              pythonTelemetry
+                .oil_pressure ?? 0
+            ),
+
+          fuel_flow:
+            Number(
+              pythonTelemetry
+                .fuel_flow ?? 0
+            ),
+
+          vibration:
+            Number(
+              pythonTelemetry
+                .vibration ?? 0
+            ),
+
+          engine_load:
+            Number(
+              pythonTelemetry
+                .engine_load ?? 0
+            ),
+
+          available_performance:
+            Number(
+              pythonTelemetry
+                .available_performance ?? 0
+            ) * 100,
+
+          altitude:
+            Number(
+              pythonTelemetry
+                .altitude ?? 0
+            ),
+
+          ambient_temperature:
+            Number(
+              pythonTelemetry
+                .ambient_temperature ?? 20
+            ),
+
+          mission_elapsed_time:
+            Number(
+              pythonTelemetry
+                .mission_elapsed_time ?? 0
+            ),
+
+          degradation_scenario:
+            pythonTelemetry
+              .degradation_scenario ??
+            'NORMAL',
+
+          degradation_enabled:
+            Boolean(
+              pythonTelemetry
+                .degradation_enabled
+            ),
+
+          degradation_severity:
+            Number(
+              pythonTelemetry
+                .degradation_severity ?? 0
+            ),
+        };
+
+
+        setTelemetry(
+          mappedTelemetry
+        );
+
+
+        addTelemetryToHistory(
+          mappedTelemetry
+        );
+
+
+        // ---------------------------------------------------------------
+        // HEALTH
+        //
+        // The Simulation Backend currently gives us the health status.
+        // We therefore do NOT depend on a nested `digital_twin.degradation`
+        // object.
+        // ---------------------------------------------------------------
+
+        const healthStatus =
+          data.digital_twin
+            ?.health_status ??
+          'NORMAL';
+
+        const healthIndex =
+          healthStatus === 'NORMAL'
+            ? 100
+            : healthStatus === 'WARNING'
+              ? 70
+              : healthStatus === 'CRITICAL'
+                ? 30
+                : 0;
+
+
+        let degradationSummary =
+          'NONE';
+
+        if (
+          mappedTelemetry
+            .degradation_enabled
+        ) {
+
+          degradationSummary =
+            `${mappedTelemetry
+              .degradation_scenario}` +
+            ` — severity ` +
+            `${(
+              mappedTelemetry
+                .degradation_severity *
+              100
+            ).toFixed(0)}%`;
+        }
+
+
+        setHealth({
+
+          status:
+            healthStatus,
+
+          health_index:
+            healthIndex,
+
+          operating_mode:
+            mappedTelemetry
+              .operating_mode,
+
+          degradation_summary:
+            degradationSummary,
+
+          active_warnings:
+            healthStatus === 'WARNING'
+              ? [
+                  'Engine health warning detected',
+                ]
+              : [],
+
+          active_criticals:
+            healthStatus === 'CRITICAL'
+              ? [
+                  'Critical engine health condition detected',
+                ]
+              : [],
+        });
+
+
+        // ---------------------------------------------------------------
+        // MISSION SUMMARY
+        // ---------------------------------------------------------------
+
+        setMissionSummary(prev => {
+
+          const currentRpm =
+            mappedTelemetry.rpm;
+
+          const currentCht =
+            mappedTelemetry.cht;
+
+          const currentEgt =
+            mappedTelemetry.egt;
+
+          const currentOilPressure =
+            mappedTelemetry.oil_pressure;
+
+          const currentVibration =
+            mappedTelemetry.vibration;
+
+
+          const isFirstRealSample =
+            prev.maxRpm === 0 &&
+            prev.maxCht === 0 &&
+            prev.maxEgt === 0;
+
+
+          return {
+
+            ...prev,
+
+            missionDuration:
+              mappedTelemetry
+                .mission_elapsed_time,
+
+            phasesCompleted:
+              Number(
+                data.mission
+                  ?.completed_phases
+                  ?.length ?? 0
+              ),
+
+            minRpm:
+              isFirstRealSample
+                ? currentRpm
+                : Math.min(
+                    prev.minRpm,
+                    currentRpm
+                  ),
+
+            maxRpm:
+              Math.max(
+                prev.maxRpm,
+                currentRpm
+              ),
+
+            maxCht:
+              Math.max(
+                prev.maxCht,
+                currentCht
+              ),
+
+            maxEgt:
+              Math.max(
+                prev.maxEgt,
+                currentEgt
+              ),
+
+            minOilPressure:
+              isFirstRealSample
+                ? currentOilPressure
+                : Math.min(
+                    prev.minOilPressure,
+                    currentOilPressure
+                  ),
+
+            maxVibration:
+              Math.max(
+                prev.maxVibration,
+                currentVibration
+              ),
+
+            maxDegradationSeverity:
+              mappedTelemetry
+                .degradation_enabled
+                ? Math.max(
+                    prev.maxDegradationSeverity,
+                    mappedTelemetry
+                      .degradation_severity
+                  )
+                : prev.maxDegradationSeverity,
+
+            finalHealth:
+              healthIndex,
+
+            finalStatus:
+              healthStatus,
+          };
+        });
+
+
+      } catch (error) {
+
+        console.error(
+          '❌ Failed to process simulation WebSocket message:',
+          error
+        );
+      }
+    };
+
+
+    socket.onerror = error => {
+
+      console.error(
+        '🔴 Simulation WebSocket error:',
+        error
+      );
+    };
+
+
+    socket.onclose = () => {
+
+      console.log(
+        '🟡 Simulation Backend disconnected'
+      );
+    };
+
+  }, [
+    addTelemetryToHistory,
+  ]);
+
+
+  // -------------------------------------------------------------------------
+  // CONNECT ON MOUNT
+  // -------------------------------------------------------------------------
+
+  useEffect(() => {
+
+    connectToPython();
+
+    return () => {
+
+      socketRef.current?.close();
+
+      socketRef.current = null;
+    };
+
+  }, [connectToPython]);
+
+
+  // -------------------------------------------------------------------------
+  // CONTROLS
+  //
+  // IMPORTANT:
+  // The current Python mission profile is authoritative.
+  // Manual control commands are therefore not sent to Python yet.
+  // -------------------------------------------------------------------------
+
   const updateControls = useCallback(
-  (partial: Partial<SimulationControlsState>) => {
-    setControls((prev) => ({ ...prev, ...partial }));
+  (
+    partial:
+      Partial<SimulationControlsState>
+  ) => {
 
-    if (partial.throttle !== undefined) {
+    // Update the local UI state immediately.
+    setControls(prev => ({
+      ...prev,
+      ...partial,
+    }));
+
+    // Send degradation controls to the Python Simulation Backend.
+    const hasDegradationChange =
+      partial.degradation_scenario !== undefined ||
+      partial.degradation_enabled !== undefined ||
+      partial.degradation_severity !== undefined;
+
+    if (hasDegradationChange) {
+
+      const nextControls = {
+        ...controls,
+        ...partial,
+      };
+
       sendPythonCommand({
         action: 'set_controls',
-        throttle: partial.throttle / 100,
+
+        degradation_scenario:
+          nextControls.degradation_scenario,
+
+        degradation_enabled:
+          nextControls.degradation_enabled,
+
+        degradation_severity:
+          nextControls.degradation_severity,
       });
     }
-    if (partial.altitude !== undefined) {
-      sendPythonCommand({
-        action: 'set_controls',
-        altitude: partial.altitude,
-      });
-    }
-    if (partial.ambient_temperature !== undefined) {
-      sendPythonCommand({
-        action: 'set_controls',
-        ambient_temperature: partial.ambient_temperature,
-      });
-    }
-    if (partial.degradation_scenario !== undefined) {
-      sendPythonCommand({
-        action: 'set_controls',
-        degradation_scenario: partial.degradation_scenario,
-      });
-    }
-    if (partial.degradation_enabled !== undefined) {
-      sendPythonCommand({
-        action: 'set_controls',
-        degradation_enabled: partial.degradation_enabled,
-      });
-    }
-    if (partial.degradation_severity !== undefined) {
-      sendPythonCommand({
-        action: 'set_controls',
-        degradation_severity: partial.degradation_severity,
-      });
-    }
+
+    console.log(
+      'Simulation control update:',
+      partial
+    );
   },
-  []
+  [
+    controls,
+    sendPythonCommand,
+  ]
 );
 
-  const startSimulation = useCallback(() => {
-    sendPythonCommand({ action:'start' });
-    setSimulationState('RUNNING');
-    addEvent({
-      timestamp: Date.now(),
-      met: telemetry.mission_elapsed_time,
-      level: 'INFO',
-      message: 'Simulation loop resumed. Real-time telemetry streaming active.',
-      source: 'CONTROLLER',
-    });
-  }, [telemetry.mission_elapsed_time, addEvent]);
+  // -------------------------------------------------------------------------
+  // START
+  // -------------------------------------------------------------------------
 
-  const pauseSimulation = useCallback(() => {
-    sendPythonCommand({ action:'pause' });
-    setSimulationState('PAUSED');
-    addEvent({
-      timestamp: Date.now(),
-      met: telemetry.mission_elapsed_time,
-      level: 'INFO',
-      message: 'Simulation loop paused by flight operator.',
-      source: 'CONTROLLER',
-    });
-  }, [telemetry.mission_elapsed_time, addEvent]);
+  const startSimulation = useCallback(
+    () => {
 
-  const resetSimulation = useCallback(() => {
-    sendPythonCommand({ action:'reset' });
-    setControls(defaultControls);
-    setTelemetry(initialTelemetry);
-    setHealth(initialHealth);
-    setHistory([]);
-    setCurrentPhaseIndex(0);
-    setMissionSummary(initialSummary);
-    setSimulationState('RUNNING');
+      const sent =
+        sendPythonCommand({
+          action: 'start',
+        });
+
+      if (!sent) {
+        return;
+      }
+
+      setSimulationState(
+        'RUNNING'
+      );
+
+      addEvent({
+
+        timestamp:
+          Date.now(),
+
+        met:
+          telemetry
+            .mission_elapsed_time,
+
+        level: 'INFO',
+
+        message:
+          'Mission start command sent to Python Simulation Backend.',
+
+        source: 'CONTROLLER',
+      });
+
+    },
+    [
+      sendPythonCommand,
+      telemetry.mission_elapsed_time,
+      addEvent,
+    ]
+  );
+
+
+  // -------------------------------------------------------------------------
+  // PAUSE
+  // -------------------------------------------------------------------------
+
+  const pauseSimulation = useCallback(
+    () => {
+
+      const sent =
+        sendPythonCommand({
+          action: 'pause',
+        });
+
+      if (!sent) {
+        return;
+      }
+
+      setSimulationState(
+        'PAUSED'
+      );
+
+      addEvent({
+
+        timestamp:
+          Date.now(),
+
+        met:
+          telemetry
+            .mission_elapsed_time,
+
+        level: 'INFO',
+
+        message:
+          'Mission paused by operator.',
+
+        source: 'CONTROLLER',
+      });
+
+    },
+    [
+      sendPythonCommand,
+      telemetry.mission_elapsed_time,
+      addEvent,
+    ]
+  );
+
+
+  // -------------------------------------------------------------------------
+  // RESET
+  // -------------------------------------------------------------------------
+
+  const resetSimulation = useCallback(
+    () => {
+
+      const sent =
+        sendPythonCommand({
+          action: 'reset',
+        });
+
+      if (!sent) {
+        return;
+      }
+
+      setControls(
+        defaultControls
+      );
+
+      setTelemetry(
+        initialTelemetry
+      );
+
+      setHealth(
+        initialHealth
+      );
+
+      setHistory([]);
+
+      setCurrentPhaseIndex(0);
+
+      setMissionSummary(
+        initialSummary
+      );
+
+      setSimulationState(
+        'PAUSED'
+      );
+
+      addEvent({
+
+        timestamp:
+          Date.now(),
+
+        met: 0,
+
+        level: 'INFO',
+
+        message:
+          'Simulation reset. Mission is waiting for START.',
+
+        source: 'ENGINE',
+      });
+
+    },
+    [
+      sendPythonCommand,
+      addEvent,
+    ]
+  );
+
+
+  // -------------------------------------------------------------------------
+  // PHASE JUMP
+  //
+  // Disabled because Python mission profile is authoritative.
+  // -------------------------------------------------------------------------
+
+  const jumpToPhase = useCallback(
+    (phaseIndex: number) => {
+
+      console.log(
+        'Manual phase jumping is disabled.',
+        phaseIndex
+      );
+
+      addEvent({
+
+        timestamp:
+          Date.now(),
+
+        met:
+          telemetry
+            .mission_elapsed_time,
+
+        level: 'INFO',
+
+        message:
+          'Manual phase jumping is disabled while the Python mission engine is active.',
+
+        source: 'MISSION',
+      });
+
+    },
+    [
+      telemetry.mission_elapsed_time,
+      addEvent,
+    ]
+  );
+
+
+  // -------------------------------------------------------------------------
+  // CLEAR EVENT LOG
+  // -------------------------------------------------------------------------
+
+  const clearEventLog =
+    useCallback(() => {
+
+      setEventLog([]);
+
+    }, []);
+
+
+  // -------------------------------------------------------------------------
+  // INITIAL EVENT
+  // -------------------------------------------------------------------------
+
+  useEffect(() => {
+
     addEvent({
-      timestamp: Date.now(),
+
+      timestamp:
+        Date.now(),
+
       met: 0,
-      level: 'INFO',
-      message: 'Aeronex Digital Twin reset to initial cold-start baseline.',
-      source: 'ENGINE',
-    });
-  }, [addEvent]);
 
-  const jumpToPhase = useCallback((phaseIndex: number) => {
-  // Python is the source of truth when using the Python WebSocket engine.
-  // Do not let the legacy MockEngineSimulator change the mission phase.
-  if (connectionMode === 'PYTHON_WEBSOCKET') {
-    addEvent({
-      timestamp: Date.now(),
-      met: telemetry.mission_elapsed_time,
       level: 'INFO',
+
       message:
-        'Manual phase jumping is disabled while the Python mission engine is active.',
-      source: 'MISSION',
-    });
+        'Aeronex Simulation interface initialized. Waiting for mission start.',
 
-    return;
-  }
-
-  // Legacy mock-simulation behaviour.
-  simulatorRef.current.setPhaseIndex(phaseIndex);
-  setCurrentPhaseIndex(phaseIndex);
-
-  const target = MISSION_PHASES[phaseIndex];
-
-  if (target) {
-    updateControls({
-      throttle: target.targetThrottle,
-      altitude: target.targetAltitude,
-    });
-
-    addEvent({
-      timestamp: Date.now(),
-      met: simulatorRef.current.getCurrentPhase().nominalDuration,
-      level: 'INFO',
-      message: `Manual waypoint phase transition to: ${target.name}`,
-      source: 'MISSION',
-    });
-  }
-}, [
-  connectionMode,
-  telemetry.mission_elapsed_time,
-  updateControls,
-  addEvent,
-]);
-
-  const clearEventLog = useCallback(() => {
-    setEventLog([]);
-  }, []);
-
-  // Initial event log
-  useEffect(() => {
-    addEvent({
-      timestamp: Date.now(),
-      met: 0,
-      level: 'INFO',
-      message: 'Aeronex MALE UAV Aero Piston Digital Twin initialized.',
       source: 'ENGINE',
     });
-    addEvent({
-      timestamp: Date.now(),
-      met: 0,
-      level: 'INFO',
-      message: 'Telemetric data stream synchronized at 10Hz sampling rate.',
-      source: 'CONTROLLER',
-    });
+
   }, [addEvent]);
 
-  // Main simulation loop (running at 10Hz = 100ms interval for smooth rendering)
-  useEffect(() => {
-    if (connectionMode === 'PYTHON_WEBSOCKET') {
-      return;
-    }
-    let lastTime = performance.now();
 
-    const interval = setInterval(() => {
-      const now = performance.now();
-      const dt = Math.min(0.25, (now - lastTime) / 1000);
-      lastTime = now;
+  // -------------------------------------------------------------------------
+  // CURRENT PHASE
+  // -------------------------------------------------------------------------
 
-      if (simStateRef.current !== 'RUNNING') return;
+  const currentPhase =
+    MISSION_PHASES[
+      Math.min(
+        currentPhaseIndex,
+        MISSION_PHASES.length - 1
+      )
+    ] ||
+    MISSION_PHASES[0];
 
-      const sim = simulatorRef.current;
-      const currentCtrl = controlsRef.current;
 
-      const result = sim.step(dt, currentCtrl, (event) => {
-        addEvent(event);
-      });
-
-      const currentTelemetry = result.telemetry;
-      const currentHealth = result.health;
-
-      setTelemetry(currentTelemetry);
-      setHealth(currentHealth);
-      setCurrentPhaseIndex(sim.getCurrentPhaseIndex());
-
-      // Append to rolling history (keep last 40 data points for responsive charts)
-      const minutes = Math.floor(currentTelemetry.mission_elapsed_time / 60);
-      const seconds = currentTelemetry.mission_elapsed_time % 60;
-      const timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-
-      setHistory((prev) => {
-        const point: TelemetryHistoryPoint = {
-          time: timeStr,
-          met: currentTelemetry.mission_elapsed_time,
-          rpm: currentTelemetry.rpm,
-          throttle: currentTelemetry.throttle,
-          cht: currentTelemetry.cht,
-          egt: currentTelemetry.egt,
-          oil_temperature: currentTelemetry.oil_temperature,
-          oil_pressure: currentTelemetry.oil_pressure,
-          vibration: currentTelemetry.vibration,
-          fuel_flow: currentTelemetry.fuel_flow,
-          altitude: currentTelemetry.altitude,
-        };
-        const next = [...prev, point];
-        return next.length > 40 ? next.slice(next.length - 40) : next;
-      });
-
-      // Update summary stats
-      setMissionSummary((prev) => ({
-        ...prev,
-        missionDuration: currentTelemetry.mission_elapsed_time,
-        phasesCompleted: sim.getCurrentPhaseIndex() + 1,
-        minRpm: Math.min(prev.minRpm, currentTelemetry.rpm),
-        maxRpm: Math.max(prev.maxRpm, currentTelemetry.rpm),
-        maxCht: Math.max(prev.maxCht, currentTelemetry.cht),
-        maxEgt: Math.max(prev.maxEgt, currentTelemetry.egt),
-        minOilPressure: Math.min(prev.minOilPressure, currentTelemetry.oil_pressure),
-        maxVibration: Math.max(prev.maxVibration, currentTelemetry.vibration),
-        maxDegradationSeverity: currentTelemetry.degradation_enabled 
-          ? Math.max(prev.maxDegradationSeverity, currentTelemetry.degradation_severity)
-          : prev.maxDegradationSeverity,
-        finalHealth: currentHealth.health_index,
-        finalStatus: currentHealth.status,
-      }));
-    }, 100);
-
-    return () => clearInterval(interval);
-  }, [addEvent]);
+  // -------------------------------------------------------------------------
+  // PROVIDER
+  // -------------------------------------------------------------------------
 
   return (
     <SimulationContext.Provider
       value={{
+
         telemetry,
+
         health,
+
         history,
+
         simulationState,
-        connectionMode: 'PYTHON_WEBSOCKET',
-        currentPhase: MISSION_PHASES[currentPhaseIndex] || MISSION_PHASES[0],
+
+        connectionMode:
+          'PYTHON_WEBSOCKET',
+
+        currentPhase,
+
         currentPhaseIndex,
-        allPhases: MISSION_PHASES,
+
+        allPhases:
+          MISSION_PHASES,
+
         missionSummary,
+
         eventLog,
+
         clearEventLog,
+
         controls,
+
         updateControls,
+
         startSimulation,
+
         pauseSimulation,
+
         resetSimulation,
+
         jumpToPhase,
       }}
     >
@@ -598,10 +1304,25 @@ useEffect(() => {
   );
 };
 
-export const useSimulation = (): SimulationContextValue => {
-  const context = useContext(SimulationContext);
-  if (!context) {
-    throw new Error('useSimulation must be used within a SimulationProvider');
-  }
-  return context;
-};
+
+// ---------------------------------------------------------------------------
+// HOOK
+// ---------------------------------------------------------------------------
+
+export const useSimulation =
+  (): SimulationContextValue => {
+
+    const context =
+      useContext(
+        SimulationContext
+      );
+
+    if (!context) {
+
+      throw new Error(
+        'useSimulation must be used within a SimulationProvider'
+      );
+    }
+
+    return context;
+  };

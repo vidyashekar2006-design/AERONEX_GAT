@@ -9,6 +9,10 @@ import pandas as pd
 from app.models.telemetry import TelemetryRecord
 
 
+# ---------------------------------------------------------------------------
+# ML package location
+# ---------------------------------------------------------------------------
+
 # E:\Aeronex\Ml\aeronex_ml_ready
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ML_ROOT = PROJECT_ROOT / "Ml" / "aeronex_ml_ready"
@@ -16,16 +20,32 @@ ML_ROOT = PROJECT_ROOT / "Ml" / "aeronex_ml_ready"
 if str(ML_ROOT) not in sys.path:
     sys.path.insert(0, str(ML_ROOT))
 
+
 from aeronex_ml.inference.predictor import AERONEXPredictor
 
+
+# ---------------------------------------------------------------------------
+# Aeronex identifiers
+# ---------------------------------------------------------------------------
 
 _ENGINE_ID = "AERONEX_SIM_ENGINE_01"
 _MISSION_ID = "LIVE_SIMULATION"
 
+
 _predictor: AERONEXPredictor | None = None
 
 
+# ---------------------------------------------------------------------------
+# Predictor
+# ---------------------------------------------------------------------------
+
 def get_predictor() -> AERONEXPredictor:
+    """
+    Lazily load the Aeronex ML v2 predictor.
+
+    Models are loaded only when the first telemetry prediction is requested.
+    """
+
     global _predictor
 
     if _predictor is None:
@@ -35,70 +55,89 @@ def get_predictor() -> AERONEXPredictor:
     return _predictor
 
 
-def _mission_phase(operating_mode: str) -> str:
+# ---------------------------------------------------------------------------
+# Telemetry conversion
+# ---------------------------------------------------------------------------
+
+def telemetry_to_ml(
+    record: TelemetryRecord,
+) -> dict[str, Any]:
     """
-    Map the simulator operating mode to the ML model's
-    training vocabulary.
+    Convert the Aeronex backend telemetry contract into the exact
+    feature contract used by Aeronex ML v2.
 
-    HIGH_LOAD represents the simulator's takeoff/high-load phase.
-    IDLE is treated as a low-load cruise-like operating state
-    because the current simulator contract does not expose
-    mission phase separately.
+    ML v2 features:
+
+        rpm
+        cht
+        egt
+        oil_temperature
+        oil_pressure
+        fuel_flow
+        vibration
+        throttle
+        altitude
+        ambient_temperature
+
+    No feature engineering or unit conversion is performed here because
+    the simulator-derived ML v2 dataset uses the same telemetry semantics.
     """
-    mapping = {
-        "IDLE": "cruise",
-        "CRUISE": "cruise",
-        "HIGH_LOAD": "takeoff",
-    }
-
-    return mapping.get(str(operating_mode), "cruise")
-
-
-def telemetry_to_ml(record: TelemetryRecord) -> dict[str, Any]:
-    """
-    Convert the backend telemetry contract into the feature names
-    expected by the trained AERONEX ML package.
-    """
-
-    throttle = float(record.throttle)
 
     return {
         "timestamp": record.timestamp.isoformat(),
+
+        # Useful metadata retained for debugging / traceability.
         "engine_id": _ENGINE_ID,
         "mission_id": _MISSION_ID,
-        "mission_phase": _mission_phase(record.operating_mode),
 
-        "load_fraction": throttle,
-        "ambient_temperature_c": float(record.ambient_temperature),
+        # ---------------------------------------------------------------
+        # Exact ML v2 feature contract
+        # ---------------------------------------------------------------
 
         "rpm": float(record.rpm),
-        "oil_temperature_c": float(record.oil_temperature),
+        "cht": float(record.cht),
+        "egt": float(record.egt),
 
-        # Simulator CHT is used as the ML model's coolant-temperature signal.
-        "coolant_temperature_c": float(record.cht),
+        "oil_temperature": float(
+            record.oil_temperature
+        ),
 
-        "oil_pressure_bar": float(record.oil_pressure),
+        "oil_pressure": float(
+            record.oil_pressure
+        ),
 
-        # The simulator does not currently expose manifold pressure.
-        # Use a bounded throttle-derived proxy for this prototype.
-        "manifold_pressure_bar": 0.8 + (0.7 * throttle),
+        "fuel_flow": float(
+            record.fuel_flow
+        ),
 
-        # Simulator fuel flow is L/h.
-        # The ML dataset uses kg/h; 0.74 kg/L is used as a
-        # representative gasoline-density conversion.
-        "fuel_flow_kg_h": float(record.fuel_flow) * 0.74,
+        "vibration": float(
+            record.vibration
+        ),
 
-        "vibration_rms": float(record.vibration),
-        "exhaust_temperature_c": float(record.egt),
+        "throttle": float(
+            record.throttle
+        ),
+
+        "altitude": float(
+            record.altitude
+        ),
+
+        "ambient_temperature": float(
+            record.ambient_temperature
+        ),
     }
 
+
+# ---------------------------------------------------------------------------
+# Prediction
+# ---------------------------------------------------------------------------
 
 def predict_from_records(
     records: list[TelemetryRecord],
     required_duration_hours: float | None = None,
 ) -> dict[str, Any]:
     """
-    Run trained ML inference on the most recent telemetry window.
+    Run Aeronex ML v2 inference on the most recent telemetry window.
     """
 
     if not records:
@@ -107,7 +146,8 @@ def predict_from_records(
             "reason": "No telemetry available",
         }
 
-    # Keep the inference window bounded.
+    # Keep inference bounded.
+    # The current dashboard uses the most recent 60 samples.
     window = records[-60:]
 
     telemetry_window = [
@@ -123,13 +163,22 @@ def predict_from_records(
     )
 
 
+# ---------------------------------------------------------------------------
+# DataFrame utility
+# ---------------------------------------------------------------------------
+
 def records_to_dataframe(
     records: list[TelemetryRecord],
 ) -> pd.DataFrame:
     """
-    Utility for debugging/testing the ML input contract.
+    Convert backend telemetry records into the ML v2 feature DataFrame.
+
+    This is primarily useful for debugging, testing and inspection.
     """
 
     return pd.DataFrame(
-        [telemetry_to_ml(record) for record in records]
+        [
+            telemetry_to_ml(record)
+            for record in records
+        ]
     )
