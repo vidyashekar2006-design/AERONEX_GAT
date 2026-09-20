@@ -1,6 +1,6 @@
 ✈️ AERONEX — AI-Enabled Digital Twin for Aero Piston Engines
 
-«Smart India Hackathon 2026 | Team AETHERIS | Team ID: GAT001»
+«Smart India Hackathon 2026 | Team AETHERIS_GAT | Team ID: 149433»
 
 AERONEX is an AI-enabled real-time Digital Twin system designed for health monitoring, fault prediction, Remaining Useful Life (RUL) estimation, and mission reliability enhancement of aero piston engines used in MALE UAVs.
 
